@@ -1,3 +1,4 @@
+pub mod arch;
 pub mod command;
 pub mod context_sw;
 pub mod cpu_time;
@@ -22,12 +23,14 @@ pub mod ppid;
 pub mod priority;
 pub mod read_bytes;
 pub mod separator;
+pub mod session;
 pub mod slot;
 pub mod start_time;
 pub mod state;
 pub mod tcp_port;
 pub mod threads;
 pub mod tree;
+pub mod tree_slot;
 pub mod tty;
 pub mod udp_port;
 pub mod uid;
@@ -40,8 +43,10 @@ pub mod user_real;
 pub mod user_saved;
 pub mod vm_rss;
 pub mod vm_size;
+pub mod vm_total;
 pub mod write_bytes;
 
+pub use self::arch::Arch;
 pub use self::command::Command;
 pub use self::context_sw::ContextSw;
 pub use self::cpu_time::CpuTime;
@@ -66,12 +71,14 @@ pub use self::ppid::Ppid;
 pub use self::priority::Priority;
 pub use self::read_bytes::ReadBytes;
 pub use self::separator::Separator;
+pub use self::session::Session;
 pub use self::slot::Slot;
 pub use self::start_time::StartTime;
 pub use self::state::State;
 pub use self::tcp_port::TcpPort;
 pub use self::threads::Threads;
 pub use self::tree::Tree;
+pub use self::tree_slot::TreeSlot;
 pub use self::tty::Tty;
 pub use self::udp_port::UdpPort;
 pub use self::uid::Uid;
@@ -84,12 +91,14 @@ pub use self::user_real::UserReal;
 pub use self::user_saved::UserSaved;
 pub use self::vm_rss::VmRss;
 pub use self::vm_size::VmSize;
+pub use self::vm_total::VmTotal;
 pub use self::write_bytes::WriteBytes;
 
 use crate::column::Column;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------------------------------------------------
 // ConfigColumnKind
@@ -97,6 +106,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ConfigColumnKind {
+    Arch,
     Command,
     ContextSw,
     CpuTime,
@@ -120,12 +130,14 @@ pub enum ConfigColumnKind {
     Priority,
     ReadBytes,
     Separator,
+    Session,
     Slot,
     StartTime,
     State,
     TcpPort,
     Threads,
     Tree,
+    TreeSlot,
     Tty,
     UdpPort,
     Uid,
@@ -139,6 +151,7 @@ pub enum ConfigColumnKind {
     Username,
     VmRss,
     VmSize,
+    VmTotal,
     WriteBytes,
 }
 
@@ -153,8 +166,10 @@ pub fn gen_column(
     separator: &str,
     abbr_sid: bool,
     tree_symbols: &[String; 5],
+    _procfs: Option<PathBuf>,
 ) -> Box<dyn Column> {
     match kind {
+        ConfigColumnKind::Arch => Box::new(Arch::new(header)),
         ConfigColumnKind::Command => Box::new(Command::new(header)),
         ConfigColumnKind::ContextSw => Box::new(ContextSw::new(header)),
         ConfigColumnKind::CpuTime => Box::new(CpuTime::new(header)),
@@ -181,12 +196,14 @@ pub fn gen_column(
         ConfigColumnKind::Priority => Box::new(Priority::new(header)),
         ConfigColumnKind::ReadBytes => Box::new(ReadBytes::new(header)),
         ConfigColumnKind::Separator => Box::new(Separator::new(separator)),
+        ConfigColumnKind::Session => Box::new(Session::new(header)),
         ConfigColumnKind::Slot => Box::new(Slot::new()),
         ConfigColumnKind::StartTime => Box::new(StartTime::new(header)),
         ConfigColumnKind::State => Box::new(State::new(header)),
         ConfigColumnKind::TcpPort => Box::new(TcpPort::new(header)),
         ConfigColumnKind::Threads => Box::new(Threads::new(header)),
         ConfigColumnKind::Tree => Box::new(Tree::new(tree_symbols)),
+        ConfigColumnKind::TreeSlot => Box::new(TreeSlot::new()),
         ConfigColumnKind::Tty => Box::new(Tty::new(header)),
         ConfigColumnKind::UdpPort => Box::new(UdpPort::new(header)),
         ConfigColumnKind::Uid => Box::new(Uid::new(header, abbr_sid)),
@@ -200,6 +217,7 @@ pub fn gen_column(
         ConfigColumnKind::Username => Box::new(User::new(header, abbr_sid)),
         ConfigColumnKind::VmRss => Box::new(VmRss::new(header)),
         ConfigColumnKind::VmSize => Box::new(VmSize::new(header)),
+        ConfigColumnKind::VmTotal => Box::new(VmTotal::new(header)),
         ConfigColumnKind::WriteBytes => Box::new(WriteBytes::new(header)),
     }
 }
@@ -208,102 +226,112 @@ pub fn gen_column(
 // KIND_LIST
 // ---------------------------------------------------------------------------------------------------------------------
 
-lazy_static! {
-    pub static ref KIND_LIST: HashMap<ConfigColumnKind, (&'static str, &'static str)> = [
-        (
-            ConfigColumnKind::Command,
-            ("Command", "Command with all arguments")
-        ),
-        (
-            ConfigColumnKind::ContextSw,
-            ("ContextSw", "Context switch count")
-        ),
-        (
-            ConfigColumnKind::CpuTime,
-            ("CpuTime", "Cumulative CPU time")
-        ),
-        (
-            ConfigColumnKind::Docker,
-            ("Docker", "Docker container name")
-        ),
-        (
-            ConfigColumnKind::ElapsedTime,
-            ("ElapsedTime", "Elapsed time")
-        ),
-        (ConfigColumnKind::Empty, ("Empty", "Empty")),
-        (ConfigColumnKind::Gid, ("Gid", "Group ID")),
-        (ConfigColumnKind::GidReal, ("GidReal", "Real group ID")),
-        (ConfigColumnKind::GidSaved, ("GidSaved", "Saved group ID")),
-        (ConfigColumnKind::Group, ("Group", "Group name")),
-        (
-            ConfigColumnKind::GroupReal,
-            ("GroupReal", "Real group name")
-        ),
-        (
-            ConfigColumnKind::GroupSaved,
-            ("GroupSaved", "Saved group name")
-        ),
-        (
-            ConfigColumnKind::MajFlt,
-            ("MajFlt", "Major page fault count")
-        ),
-        (
-            ConfigColumnKind::MinFlt,
-            ("MinFlt", "Minor page fault count")
-        ),
-        (
-            ConfigColumnKind::MultiSlot,
-            ("MultiSlot", "Slot for `--insert` option")
-        ),
-        (ConfigColumnKind::Nice, ("Nice", "Nice value")),
-        (ConfigColumnKind::Pgid, ("Pgid", "Process group ID")),
-        (ConfigColumnKind::Pid, ("Pid", "Process ID")),
-        (ConfigColumnKind::Policy, ("Policy", "Scheduling policy")),
-        (ConfigColumnKind::Ppid, ("Ppid", "Parent process ID")),
-        (ConfigColumnKind::Priority, ("Priority", "Priority")),
-        (
-            ConfigColumnKind::ReadBytes,
-            ("ReadBytes", "Read bytes from storage")
-        ),
-        (
-            ConfigColumnKind::Separator,
-            ("Separator", "Show | for column separation")
-        ),
-        (
-            ConfigColumnKind::Slot,
-            ("Slot", "Slot for `--insert` option")
-        ),
-        (ConfigColumnKind::StartTime, ("StartTime", "Starting time")),
-        (ConfigColumnKind::State, ("State", "Process state")),
-        (ConfigColumnKind::TcpPort, ("TcpPort", "Bound TCP ports")),
-        (ConfigColumnKind::Threads, ("Threads", "Thread count")),
-        (ConfigColumnKind::Tty, ("Tty", "Controlling TTY")),
-        (ConfigColumnKind::UdpPort, ("UdpPort", "Bound UDP ports")),
-        (ConfigColumnKind::Uid, ("Uid", "User ID")),
-        (ConfigColumnKind::UidReal, ("UidReal", "Real user ID")),
-        (ConfigColumnKind::UidSaved, ("UidSaved", "Saved user ID")),
-        (ConfigColumnKind::UsageCpu, ("UsageCpu", "CPU utilization")),
-        (
-            ConfigColumnKind::UsageMem,
-            ("UsageMem", "Memory utilization")
-        ),
-        (ConfigColumnKind::User, ("User", "User name")),
-        (ConfigColumnKind::UserReal, ("UserReal", "Real user name")),
-        (
-            ConfigColumnKind::UserSaved,
-            ("UserSaved", "Saved user name")
-        ),
-        (ConfigColumnKind::VmRss, ("VmRss", "Resident set size")),
-        (ConfigColumnKind::VmSize, ("VmSize", "Physical page size")),
-        (
-            ConfigColumnKind::WriteBytes,
-            ("WriteBytes", "Write bytes to storage")
-        ),
-    ]
-    .iter()
-    .cloned()
-    .collect();
-}
+pub static KIND_LIST: Lazy<BTreeMap<ConfigColumnKind, (&'static str, &'static str)>> =
+    Lazy::new(|| {
+        [
+            (
+                ConfigColumnKind::Command,
+                ("Command", "Command with all arguments"),
+            ),
+            (
+                ConfigColumnKind::ContextSw,
+                ("ContextSw", "Context switch count"),
+            ),
+            (
+                ConfigColumnKind::CpuTime,
+                ("CpuTime", "Cumulative CPU time"),
+            ),
+            (
+                ConfigColumnKind::Docker,
+                ("Docker", "Docker container name"),
+            ),
+            (
+                ConfigColumnKind::ElapsedTime,
+                ("ElapsedTime", "Elapsed time"),
+            ),
+            (ConfigColumnKind::Empty, ("Empty", "Empty")),
+            (ConfigColumnKind::Gid, ("Gid", "Group ID")),
+            (ConfigColumnKind::GidReal, ("GidReal", "Real group ID")),
+            (ConfigColumnKind::GidSaved, ("GidSaved", "Saved group ID")),
+            (ConfigColumnKind::Group, ("Group", "Group name")),
+            (
+                ConfigColumnKind::GroupReal,
+                ("GroupReal", "Real group name"),
+            ),
+            (
+                ConfigColumnKind::GroupSaved,
+                ("GroupSaved", "Saved group name"),
+            ),
+            (
+                ConfigColumnKind::MajFlt,
+                ("MajFlt", "Major page fault count"),
+            ),
+            (
+                ConfigColumnKind::MinFlt,
+                ("MinFlt", "Minor page fault count"),
+            ),
+            (
+                ConfigColumnKind::MultiSlot,
+                ("MultiSlot", "Slot for `--insert` option"),
+            ),
+            (ConfigColumnKind::Nice, ("Nice", "Nice value")),
+            (ConfigColumnKind::Pgid, ("Pgid", "Process group ID")),
+            (ConfigColumnKind::Pid, ("Pid", "Process ID")),
+            (ConfigColumnKind::Policy, ("Policy", "Scheduling policy")),
+            (ConfigColumnKind::Ppid, ("Ppid", "Parent process ID")),
+            (ConfigColumnKind::Priority, ("Priority", "Priority")),
+            (
+                ConfigColumnKind::ReadBytes,
+                ("ReadBytes", "Read bytes from storage"),
+            ),
+            (
+                ConfigColumnKind::Separator,
+                ("Separator", "Show | for column separation"),
+            ),
+            (ConfigColumnKind::Session, ("Session", "Process Session ID")),
+            (
+                ConfigColumnKind::Slot,
+                ("Slot", "Slot for `--insert` option"),
+            ),
+            (ConfigColumnKind::StartTime, ("StartTime", "Starting time")),
+            (ConfigColumnKind::State, ("State", "Process state")),
+            (ConfigColumnKind::TcpPort, ("TcpPort", "Bound TCP ports")),
+            (ConfigColumnKind::Threads, ("Threads", "Thread count")),
+            (
+                ConfigColumnKind::TreeSlot,
+                ("TreeSlot", "Slot for tree column"),
+            ),
+            (ConfigColumnKind::Tty, ("Tty", "Controlling TTY")),
+            (ConfigColumnKind::UdpPort, ("UdpPort", "Bound UDP ports")),
+            (ConfigColumnKind::Uid, ("Uid", "User ID")),
+            (ConfigColumnKind::UidReal, ("UidReal", "Real user ID")),
+            (ConfigColumnKind::UidSaved, ("UidSaved", "Saved user ID")),
+            (ConfigColumnKind::UsageCpu, ("UsageCpu", "CPU utilization")),
+            (
+                ConfigColumnKind::UsageMem,
+                ("UsageMem", "Memory utilization"),
+            ),
+            (ConfigColumnKind::User, ("User", "User name")),
+            (ConfigColumnKind::UserReal, ("UserReal", "Real user name")),
+            (
+                ConfigColumnKind::UserSaved,
+                ("UserSaved", "Saved user name"),
+            ),
+            (ConfigColumnKind::VmRss, ("VmRss", "Resident set size")),
+            (ConfigColumnKind::VmSize, ("VmSize", "Physical page size")),
+            (
+                ConfigColumnKind::VmTotal,
+                ("VmTotal", "Total footprint size"),
+            ),
+            (
+                ConfigColumnKind::WriteBytes,
+                ("WriteBytes", "Write bytes to storage"),
+            ),
+        ]
+        .iter()
+        .cloned()
+        .collect()
+    });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // CONFIG_DEFAULT
@@ -363,6 +391,141 @@ kind = "Command"
 style = "BrightWhite|Black"
 numeric_search = false
 nonnumeric_search = true
+"#;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// CONFIG_LARGE
+// ---------------------------------------------------------------------------------------------------------------------
+
+pub static CONFIG_LARGE: &str = r#"
+[[columns]]
+kind = "Pid"
+style = "BrightYellow|Yellow"
+numeric_search = true
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "User"
+style = "BrightGreen|Green"
+numeric_search = false
+nonnumeric_search = true
+align = "Left"
+[[columns]]
+kind = "Separator"
+style = "White|BrightBlack"
+numeric_search = false
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "State"
+style = "ByState"
+numeric_search = false
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "Nice"
+style = "BrightMagenta|Magenta"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "Tty"
+style = "BrightWhite|Black"
+numeric_search = false
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "UsageCpu"
+style = "ByPercentage"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "UsageMem"
+style = "ByPercentage"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "VmSize"
+style = "ByUnit"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "VmRss"
+style = "ByUnit"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "TcpPort"
+style = "BrightCyan|Cyan"
+numeric_search = true
+nonnumeric_search = false
+align = "Left"
+max_width = 20
+[[columns]]
+kind = "UdpPort"
+style = "BrightCyan|Cyan"
+numeric_search = true
+nonnumeric_search = false
+align = "Left"
+max_width = 20
+[[columns]]
+kind = "ReadBytes"
+style = "ByUnit"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "WriteBytes"
+style = "ByUnit"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "Slot"
+style = "ByUnit"
+numeric_search = false
+nonnumeric_search = false
+align = "Right"
+[[columns]]
+kind = "Separator"
+style = "White|BrightBlack"
+numeric_search = false
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "CpuTime"
+style = "BrightCyan|Cyan"
+numeric_search = false
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "StartTime"
+style = "BrightMagenta|Magenta"
+numeric_search = false
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "Docker"
+style = "BrightGreen|Green"
+numeric_search = false
+nonnumeric_search = true
+align = "Left"
+[[columns]]
+kind = "Separator"
+style = "White|BrightBlack"
+numeric_search = false
+nonnumeric_search = false
+align = "Left"
+[[columns]]
+kind = "Command"
+style = "BrightWhite|Black"
+numeric_search = false
+nonnumeric_search = true
+align = "Left"
 "#;
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -444,6 +607,9 @@ style = "Cyan"
 kind = "Separator"
 style = "White"
 [[columns]]
+kind = "Session"
+style = "Yellow"
+[[columns]]
 kind = "StartTime"
 style = "White"
 [[columns]]
@@ -455,6 +621,9 @@ style = "White"
 [[columns]]
 kind = "Threads"
 style = "White"
+[[columns]]
+kind = "TreeSlot"
+style = "BrightWhite"
 [[columns]]
 kind = "Tty"
 style = "White"

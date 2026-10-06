@@ -13,9 +13,9 @@ pub struct Empty {
 
 impl Empty {
     pub fn new() -> Self {
-        let header = String::from("");
-        let unit = String::from("");
-        Empty {
+        let header = String::new();
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -27,12 +27,12 @@ impl Empty {
 
 impl Column for Empty {
     fn add(&mut self, proc: &ProcessInfo) {
-        let raw_content = String::from("");
-        let fmt_content = String::from("");
+        let raw_content = String::new();
+        let fmt_content = String::new();
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(String);
+    column_default!(String, false);
 }

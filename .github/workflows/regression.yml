@@ -1,25 +1,88 @@
 name: Regression
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+  pull_request:
 
 jobs:
   build:
-
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-        rust: [stable]
+        include:
+          - os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            rust: stable
+            target: aarch64-unknown-linux-gnu
+          - os: macOS-latest
+            rust: stable
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            rust: stable
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            rust: stable
+            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
-
     steps:
-    - name: Setup Rust
-      uses: hecrj/setup-rust-action@v1
-      with:
-        rust-version: ${{ matrix.rust }}
-    - name: Checkout
-      uses: actions/checkout@v1
-    - name: Run tests
-      run: cargo test --locked
-    - name: Run tests feature variation
-      run: cargo test --locked --no-default-features
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          targets: ${{ matrix.target }}
+      - name: Run tests
+        run: cargo test --locked --target ${{ matrix.target }}
+      - name: Run tests feature variation
+        run: cargo test --locked --target ${{ matrix.target }} --no-default-features
+
+  build-freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y rust
+            pkg install -y llvm15
+          run: |
+            cargo test --locked -- --test-threads=1
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.88.0
+          targets: x86_64-unknown-linux-gnu
+      - name: Run build
+        run: cargo build
+
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Run rustfmt
+        run: cargo fmt -- --check 
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+      - name: Run clippy feature variation
+        run: cargo clippy --no-default-features -- -D warnings

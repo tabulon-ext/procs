@@ -3,9 +3,8 @@
 **procs** is a replacement for `ps` written in [Rust](https://www.rust-lang.org/).
 
 [![Actions Status](https://github.com/dalance/procs/workflows/Regression/badge.svg)](https://github.com/dalance/procs/actions)
-[![codecov](https://codecov.io/gh/dalance/procs/branch/master/graph/badge.svg)](https://codecov.io/gh/dalance/procs)
 
-[![Changelog](https://img.shields.io/badge/changelog-v0.12.0-green.svg)](https://github.com/dalance/procs/blob/master/CHANGELOG.md)
+[![Changelog](https://img.shields.io/badge/changelog-v0.14.12-green.svg)](https://github.com/dalance/procs/blob/master/CHANGELOG.md)
 [![Crates.io](https://img.shields.io/crates/v/procs.svg)](https://crates.io/crates/procs)
 [![procs](https://snapcraft.io/procs/badge.svg)](https://snapcraft.io/procs)
 [![homebrew](https://img.shields.io/homebrew/v/procs.svg)](https://formulae.brew.sh/formula/procs)
@@ -36,10 +35,10 @@
 
 - Linux is supported.
 - macOS is experimentally supported.
-    - macOS version is checked on Travis CI environment only.
+    - macOS version is checked only in the GitHub Actions environment.
     - The issues caused by real-machine are welcome.
-- Windows is experimentally supported.
-    - Paging is not supported
+- Windows is supported.
+- FreeBSD is experimentally supported.
 
 ## Installation
 
@@ -47,7 +46,7 @@
 
 Download from [release page](https://github.com/dalance/procs/releases/latest), and extract to the directory in PATH.
 
-### [![Packaging status](https://repology.org/badge/vertical-allrepos/procs.svg)](https://repology.org/project/procs/versions)
+### [![Packaging status](https://repology.org/badge/vertical-allrepos/procs.svg?columns=3)](https://repology.org/project/procs/versions)
 
 ### Nixpkgs
 
@@ -93,7 +92,7 @@ sudo apk add procs
 
 ### Arch Linux
 
-You can install from the [Arch Linux community repository](https://archlinux.org/packages/community/x86_64/procs/).
+You can install from the [Arch Linux extra repository](https://archlinux.org/packages/extra/x86_64/procs/).
 
 ```
 sudo pacman -S procs
@@ -113,12 +112,18 @@ scoop install procs
 sudo dnf install procs
 ```
 
+### Windows
+
+```
+winget install procs
+```
+
 ### RPM
 
 You can install with rpm.
 
 ```
-sudo rpm -i https://github.com/dalance/procs/releases/download/v0.12.0/procs-0.12.0-1.x86_64.rpm
+sudo rpm -i https://github.com/dalance/procs/releases/download/v0.14.12/procs-0.14.12-1.x86_64.rpm
 ```
 
 ### Cargo
@@ -129,11 +134,21 @@ You can install with [cargo](https://crates.io/crates/procs).
 cargo install procs
 ```
 
+### X-CMD
+
+You can install with [x-cmd](https://www.x-cmd.com).
+
+```
+x env use procs
+# or
+x procs # Download procs, and invoke procs in a way that does not affect the current environment
+```
+
 ## Installation Notes
 
 ### Permissions issues
 
-On macOS, normal users can't access any information on other users' processes
+On macOS, normal users can't access any information on other users' processes.
 On Linux, normal users can't access some information (ex. Read/Write throughput) of other users.
 
 If you want to show this information, you should use `sudo`.
@@ -145,7 +160,7 @@ $ sudo procs
 
 If you want to skip password input, you can add the following entry to `/etc/sudoers`.
 
-```
+```text
 [user or group] ALL= NOPASSWD: [procs binary path]
 // ex. myuser ALL= NOPASSWD: /usr/local/bin/procs
 ```
@@ -159,7 +174,7 @@ In the following screenshots, `config/large.toml` is used as the configuration.
 Type `procs` only. It shows the information of all processes.
 
 ```console
-$ procs
+procs
 ```
 
 ![procs](https://user-images.githubusercontent.com/4331004/55446625-5e5fce00-55fb-11e9-8914-69e8640d89d7.png)
@@ -169,7 +184,7 @@ $ procs
 If you add any keyword as argument, it is matched to `USER`, `Command` by default.
 
 ```console
-$ procs zsh
+procs zsh
 ```
 
 If you want to add columns matching to non-numeric keyword, `nonnumeric_search` option can be used in configuration file.
@@ -182,7 +197,7 @@ If a numeric is used as the keyword, it is matched to `PID` by default.
 Numeric is treated as exact match, and non-numeric is treated as partial match by default.
 
 ```console
-$ procs --or 6000 60000 60001 16723
+procs --or 6000 60000 60001 16723
 ```
 
 If you want to add columns matching to numeric keyword, `numeric_search` option can be used in configuration file.
@@ -207,7 +222,7 @@ The default operation can be specified in the [configuration file](#configuratio
 If you have access permission to docker daemon ( `unix:///var/run/docker.sock` ), `Docker` column is added.
 
 ```console
-$ procs growi
+procs growi
 ```
 
 ![procs_docker](https://user-images.githubusercontent.com/4331004/55446681-91a25d00-55fb-11e9-943d-5b5caeb23c62.png)
@@ -218,7 +233,17 @@ Note that procs gets the container information through UNIX domain socket, so [D
 ### Pager
 
 If output lines exceed terminal height, pager is used automatically.
-This behavior and pager command can be specified by configuration file.
+This behavior and pager command can be specified by [configuration file](#pager-section).
+
+#### Linux / macOS
+
+On Linux and macOS, `less` is the default pager.
+If there is not `less`, `more` is used.
+Instead of them, built-in pager can be used by configuration `use_builtin`.
+
+#### Windows
+
+On Windows, built-in pager is always used.
 
 ### Watch mode
 
@@ -238,10 +263,12 @@ There are some keyboard shortcuts to control.
 If `--tree` option is used, processes are sorted by dependency order and dependency tree is shown at left side.
 
 ```console
-$ procs --tree
+procs --tree
 ```
 
 ![procs_tree](https://user-images.githubusercontent.com/4331004/55446692-9ff07900-55fb-11e9-8b66-a8432df0a8e1.png)
+
+If `TreeSlot` column exists in config, dependency tree is shown at the slot.
 
 ### Sort column
 
@@ -257,7 +284,7 @@ The keyword is matched partially and case is ignored.
 The default sort is specified by `[sort]` section in the [configuration file](#configuration).
 
 ```console
-$ procs --sortd cpu
+procs --sortd cpu
 ```
 
 ![procs_sort](https://user-images.githubusercontent.com/4331004/55446704-ab43a480-55fb-11e9-81dc-e3ac1a1e2507.png)
@@ -267,15 +294,15 @@ $ procs --sortd cpu
 `--insert` option inserts new column to the position of `Slot` column or `MultiSlot` column.
 The column for insert is selected by the option keyword.
 The keyword is the same as sort option.
-A `Slot` column can be used by a inserted column.
-If many insertion is required, many `Slot` should be added.
-A `MultiSlot` column can be used by many inserted column.
+A `Slot` column can be used by an inserted column.
+If many insertions are required, many `Slot` columns should be added.
+A `MultiSlot` column can be used by many inserted columns.
 If there is a `MultiSlot`, all the remaining columns are inserted to the `MultiSlot`, and the subsequent `Slot` / `MultiSlot` is not used.
 Unused `Slot` / `MultiSlot` is not shown.
 
 ### Shell completion
 
-`--completion` option generates shell completion files under the current directory.
+`--gen-completion` option generates shell completion files under the current directory.
 The following shells are supported.
 
  * `zsh`
@@ -284,29 +311,38 @@ The following shells are supported.
  * `powershell`
  * `elvish`
 
-`--completion-out` option generates shell completion to stdout.
-You can source it directly.
+`--gen-completion-out` option generates shell completion to stdout.
+You can source it directly on some shells.
 
-```
-$ source <(procs --completion-out zsh)
+```console
+source <(procs --gen-completion-out bash)
 ```
 
 ## Configuration
+
+### Configuration path
 
 You can change configuration by writing a configuration file.
 There are some configuration examples in `config` directory of this repository.
 `config/large.toml` is the default configuration before procs v0.9.21.
 
-The location of the configuration file is OS-specific:
+The locations of the configuration file is OS-specific:
 
- * Linux: `~/.config/procs/config.toml`
- * macOS: `~/Library/Preferences/com.github.dalance.procs/config.toml`
- * Windows: `~/AppData/Roaming/dalance/procs/config.toml`
+ * Linux: `~/.config/procs/config.toml`, `/etc/procs/procs.toml`
+ * macOS: `~/Library/Preferences/com.github.dalance.procs/config.toml`, `/etc/procs/procs.toml`
+ * Windows: `~/AppData/Roaming/dalance/procs/config/config.toml`
 
 For compatibility, if `~/.procs.toml` exists, it will be preferred to
 the OS-specific locations.
 
-The complete example of a configuration file can be generated by `--config` option.
+### Specify a configuration from command line
+
+`--use-config` option can specify a built-in configuration.
+`--load-config` option can specify a configuration file path.
+
+### Configuration example
+
+The complete example of a configuration file can be generated by `--gen-config` option.
 
 ```toml
 [[columns]]
@@ -396,74 +432,91 @@ The first `[[columns]]` is shown at left side, and the last is shown at right si
 
 #### `kind` list
 
-| procs `kind` | `ps` STANDARD FORMAT  | Description                                   | Linux | macOS | Windows |
-| ------------ | --------------------- | --------------------------------------------- | ----- | ----- | ------- |
-| Command      | args                  | Command with all arguments                    | o     | o     | o       |
-| ContextSw    | -not supported-       | Context switch count                          | o     | o     |         |
-| CpuTime      | cputime               | Cumulative CPU time                           | o     | o     | o       |
-| Docker       | -not supported-       | Docker container name                         | o     | o     |         |
-| Eip          | eip                   | Instruction pointer                           | o     |       |         |
-| ElapsedTime  | -not supported-       | Elapsed time                                  | o     | o     | o       |
-| Esp          | esp                   | Stack pointer                                 | o     |       |         |
-| Gid          | egid                  | Group ID                                      | o     | o     | o       |
-| GidFs        | fgid                  | File system group ID                          | o     |       |         |
-| GidReal      | rgid                  | Real group ID                                 | o     | o     |         |
-| GidSaved     | sgid                  | Saved group ID                                | o     | o     |         |
-| Group        | egroup                | Group name                                    | o     | o     | o       |
-| GroupFs      | fgroup                | File system group name                        | o     |       |         |
-| GroupReal    | rgroup                | Real group name                               | o     | o     |         |
-| GroupSaved   | sgroup                | Saved group name                              | o     | o     |         |
-| MajFlt       | maj_flt               | Major page fault count                        | o     | o     | o       |
-| MinFlt       | min_flt               | Minor page fault count                        | o     | o     |         |
-| MultiSlot    | -not supported-       | Slot for `--insert` option                    | o     | o     | o       |
-| Nice         | ni                    | Nice value                                    | o     | o     |         |
-| Pid          | pid                   | Process ID ( or Thread ID sorrunded by `[]` ) | o     | o     | o       |
-| Policy       | policy                | Scheduling policy                             | o     | o     |         |
-| Ppid         | ppid                  | Parent process ID                             | o     | o     | o       |
-| Priority     | pri                   | Priority                                      | o     | o     | o       |
-| Processor    | psr                   | Currently assigned processor                  | o     |       |         |
-| ReadBytes    | -not supported-       | Read bytes from storage                       | o     | o     | o       |
-| RtPriority   | rtprio                | Real-time priority                            | o     |       |         |
-| Separator    | -not supported-       | Show `\|` for column separation               | o     | o     | o       |
-| ShdPnd       | pending               | Pending signal mask for process               | o     |       |         |
-| Slot         | -not supported-       | Slot for `--insert` option                    | o     | o     | o       |
-| SigBlk       | blocked               | Blocked signal mask                           | o     |       |         |
-| SigCgt       | caught                | Caught signal mask                            | o     |       |         |
-| SigIgn       | ignored               | Ignored signal mask                           | o     |       |         |
-| SigPnd       | pending               | Pending signal mask for thread                | o     |       |         |
-| Ssb          | -not supported-       | Speculative store bypass status               | o     |       |         |
-| StartTime    | start_time            | Starting time                                 | o     | o     | o       |
-| State        | s                     | Process state                                 | o     | o     |         |
-| TcpPort      | -not supported-       | Bound TCP ports                               | o     | o     |         |
-| Threads      | nlwp                  | Thread count                                  | o     | o     |         |
-| Tty          | tty                   | Controlling TTY                               | o     | o     |         |
-| UdpPort      | -not supported-       | Bound UDP ports                               | o     | o     |         |
-| Uid          | euid                  | User ID                                       | o     | o     | o       |
-| UidFs        | fuid                  | File system user ID                           | o     |       |         |
-| UidLogin     | -not supported-       | Login user ID                                 | o     |       |         |
-| UidReal      | ruid                  | Real user ID                                  | o     | o     |         |
-| UidSaved     | suid                  | Saved user ID                                 | o     | o     |         |
-| UsageCpu     | %cpu                  | CPU utilization                               | o     | o     | o       |
-| UsageMem     | %mem                  | Memory utilization                            | o     | o     | o       |
-| User         | euser                 | User name                                     | o     | o     | o       |
-| UserFs       | fuser                 | File system user name                         | o     |       |         |
-| UserLogin    | -not supported-       | Login user name                               | o     |       |         |
-| UserReal     | ruser                 | Real user name                                | o     | o     |         |
-| UserSaved    | suser                 | Saved user name                               | o     | o     |         |
-| VmData       | -not supported-       | Data size                                     | o     |       |         |
-| VmExe        | trs                   | Text segments size                            | o     |       |         |
-| VmHwm        | -not supported-       | Peak resident set size                        | o     |       | o       |
-| VmLib        | -not supported-       | Library code size                             | o     |       |         |
-| VmLock       | -not supported-       | Locked memory size                            | o     |       |         |
-| VmPeak       | -not supported-       | Peak virtual memory size                      | o     |       | o       |
-| VmPin        | -not supported-       | Pinned memory size                            | o     |       | o       |
-| VmPte        | -not supported-       | Page table entries size                       | o     |       |         |
-| VmRss        | rss                   | Resident set size                             | o     | o     | o       |
-| VmSize       | vsz                   | Physical page size                            | o     | o     | o       |
-| VmStack      | -not supported-       | Stack size                                    | o     |       |         |
-| VmSwap       | -not supported-       | Swapped-out virtual memory size               | o     |       | o       |
-| Wchan        | wchan                 | Process sleeping kernel function              | o     |       |         |
-| WriteByte    | -not supported-       | Write bytes to storage                        | o     | o     | o       |
+| procs `kind`         | `ps` STANDARD FORMAT  | Description                                   | Linux | macOS | Windows | FreeBSD |
+| -------------------- | --------------------- | --------------------------------------------- | ----- | ----- | ------- | ------- |
+| Arch                 | -not supported-       | Architecture of binary                        |       | o     | o       |         |
+| Ccgroup              | -not supported-       | Control group by compressed format            | o     |       |         |         |
+| Cgroup               | cgroup                | Control group                                 | o     |       |         |         |
+| Command              | args                  | Command with all arguments                    | o     | o     | o       | o       |
+| ContextSw            | -not supported-       | Context switch count                          | o     | o     |         | o       |
+| CpuTime              | cputime               | Cumulative CPU time                           | o     | o     | o       | o       |
+| Docker               | -not supported-       | Docker container name                         | o     | o     |         |         |
+| Eip                  | eip                   | Instruction pointer                           | o     |       |         |         |
+| ElapsedTime          | -not supported-       | Elapsed time                                  | o     | o     | o       | o       |
+| Env                  | `e` output modifier   | Environment variables                         | o     |       |         | o       |
+| Esp                  | esp                   | Stack pointer                                 | o     |       |         |         |
+| FileName             | comm                  | File name                                     | o     |       | o       | o       |
+| Gid                  | egid                  | Group ID                                      | o     | o     | o       | o       |
+| GidFs                | fgid                  | File system group ID                          | o     |       |         |         |
+| GidReal              | rgid                  | Real group ID                                 | o     | o     |         | o       |
+| GidSaved             | sgid                  | Saved group ID                                | o     | o     |         | o       |
+| Group                | egroup                | Group name                                    | o     | o     | o       | o       |
+| GroupFs              | fgroup                | File system group name                        | o     |       |         |         |
+| GroupReal            | rgroup                | Real group name                               | o     | o     |         | o       |
+| GroupSaved           | sgroup                | Saved group name                              | o     | o     |         | o       |
+| InvoluntaryContextSw | -not supported-       | Involuntary context switch count              | o     |       |         | o       |
+| MajFlt               | maj_flt               | Major page fault count                        | o     | o     | o       | o       |
+| MinFlt               | min_flt               | Minor page fault count                        | o     | o     |         | o       |
+| MultiSlot            | -not supported-       | Slot for `--insert` option                    | o     | o     | o       | o       |
+| Nice                 | ni                    | Nice value                                    | o     | o     |         | o       |
+| Pgid                 | pgid                  | Process group ID                              | o     | o     |         | o       |
+| Pid                  | pid                   | Process ID ( or Thread ID sorrunded by `[]` ) | o     | o     | o       | o       |
+| Policy               | policy                | Scheduling policy                             | o     | o     |         |         |
+| Ppid                 | ppid                  | Parent process ID                             | o     | o     | o       | o       |
+| Priority             | pri                   | Priority                                      | o     | o     | o       | o       |
+| Processor            | psr                   | Currently assigned processor                  | o     |       |         | o       |
+| ReadBytes            | -not supported-       | Read bytes from storage                       | o     | o     | o       | o       |
+| RecvBytes            | -not supported-       | Received bytes per second (Windows 11)        |       |       | o       |         |
+| RtPriority           | rtprio                | Kernel base priority (Windows) / real-time priority (Linux) | o     |       | o       |         |
+| SecContext           | label                 | Security context                              | o     |       |         |         |
+| SendBytes            | -not supported-       | Sent bytes per second (Windows 11)            |       |       | o       |         |
+| Separator            | -not supported-       | Show `\|` for column separation               | o     | o     | o       | o       |
+| Session              | sid                   | Session ID                                    | o     | o     | o       | o       |
+| ShdPnd               | pending               | Pending signal mask for process               | o     |       |         | o       |
+| SigBlk               | blocked               | Blocked signal mask                           | o     |       |         | o       |
+| SigCgt               | caught                | Caught signal mask                            | o     |       |         | o       |
+| SigIgn               | ignored               | Ignored signal mask                           | o     |       |         | o       |
+| SigPnd               | pending               | Pending signal mask for thread                | o     |       |         |         |
+| Slot                 | -not supported-       | Slot for `--insert` option                    | o     | o     | o       | o       |
+| Ssb                  | -not supported-       | Speculative store bypass status               | o     |       |         |         |
+| StartTime            | start_time            | Starting time                                 | o     | o     | o       | o       |
+| State                | s                     | Process state                                 | o     | o     | o       | o       |
+| TcpPort              | -not supported-       | Bound TCP ports                               | o     | o     | o       |         |
+| Threads              | nlwp                  | Thread count                                  | o     | o     | o       | o       |
+| TreeSlot             | -not supported-       | Slot for tree column                          | o     | o     | o       | o       |
+| Tty                  | tty                   | Controlling TTY                               | o     | o     |         | o       |
+| UdpPort              | -not supported-       | Bound UDP ports                               | o     | o     |         |         |
+| Uid                  | euid                  | User ID                                       | o     | o     | o       | o       |
+| UidFs                | fuid                  | File system user ID                           | o     |       |         |         |
+| UidLogin             | -not supported-       | Login user ID                                 | o     |       |         |         |
+| UidReal              | ruid                  | Real user ID                                  | o     | o     |         | o       |
+| UidSaved             | suid                  | Saved user ID                                 | o     | o     |         | o       |
+| UsageCpu             | %cpu                  | CPU utilization                               | o     | o     | o       | o       |
+| UsageMem             | %mem                  | Memory utilization                            | o     | o     | o       | o       |
+| User                 | euser                 | User name                                     | o     | o     | o       | o       |
+| UserFs               | fuser                 | File system user name                         | o     |       |         |         |
+| UserLogin            | -not supported-       | Login user name                               | o     |       |         |         |
+| UserReal             | ruser                 | Real user name                                | o     | o     |         | o       |
+| UserSaved            | suser                 | Saved user name                               | o     | o     |         | o       |
+| VmData               | -not supported-       | Data size                                     | o     |       |         | o       |
+| VmExe                | trs                   | Text segments size                            | o     |       |         | o       |
+| VmHwm                | -not supported-       | Peak resident set size                        | o     |       | o       | o       |
+| VmLib                | -not supported-       | Library code size                             | o     |       |         |         |
+| VmLock               | -not supported-       | Locked memory size                            | o     |       |         |         |
+| VmPeak               | -not supported-       | Peak virtual memory size                      | o     |       | o       |         |
+| VmPin                | -not supported-       | Pinned memory size                            | o     |       | o       |         |
+| VmPte                | -not supported-       | Page table entries size                       | o     |       |         |         |
+| VmRss                | rss                   | Resident set size                             | o     | o     | o       | o       |
+| VmSize               | vsz                   | Physical page size                            | o     | o     | o       | o       |
+| VmStack              | -not supported-       | Stack size                                    | o     |       |         | o       |
+| VmSwap               | -not supported-       | Swapped-out virtual memory size               | o     |       | o       |         |
+| VmTotal              | -not supported-       | Total virtual memory size                     | *[^*] | o     | *[^*]   | *[^*]   |
+| VoluntaryContextSw   | -not supported-       | Voluntary context switch count                | o     |       |         | o       |
+| Wchan                | wchan                 | Process sleeping kernel function              | o     |       |         | o       |
+| WorkDir              | -not supported-       | Current working directory                     | o     |       | o       |         |
+| WriteByte            | -not supported-       | Write bytes to storage                        | o     | o     | o       | o       |
+
+[^*]: Alias for VmRss on these platforms
 
 #### `style` list
 
@@ -567,11 +620,20 @@ style = "223"     # 223 for both theme
 
 `[search]` section defines option for Keyword search.
 
-| Key               | Value              | Default | Description                                             |
-| ----------------- | ------------------ | ------- | ------------------------------------------------------- |
-| numeric_search    | Exact, Partial     | Exact   | Whether numeric keywords match exactly or partially     |
-| nonnumeric_search | Exact, Partial     | Partial | Whether non-numeric keywords match exactly or partially |
-| logic             | And, Or, Nand, Nor | And     | Logical operation between keywords                      |
+| Key               | Value                         | Default | Description                                             |
+| ----------------- | ----------------------------- | ------- | ------------------------------------------------------- |
+| numeric_search    | Exact, Partial                | Exact   | Whether numeric keywords match exactly or partially     |
+| nonnumeric_search | Exact, Partial                | Partial | Whether non-numeric keywords match exactly or partially |
+| logic             | And, Or, Nand, Nor            | And     | Logical operation between keywords                      |
+| case              | Smart, Insensitive, Sensitive | Smart   | Case sensitivity in search                              |
+
+#### `case`
+
+`case` is case sensitivity in search.
+
+- `Smart`: If keyword contains uppercase character, case sensitive search. Otherwise case insensitive search
+- `Insensitive`: case insensitive search
+- `Sensitive`: case sensitive search
 
 ### `[display]` section
 
@@ -580,10 +642,14 @@ style = "223"     # 223 for both theme
 | Key                   | Value                 | Default          | Description                                                                  |
 | --------------------- | --------------------- | ---------------- | ---------------------------------------------------------------------------- |
 | show_self             | true, false           | false            | Whether the self process ( `procs` ) is shown                                |
+| show_self_parents     | true, false           | false            | Whether the parents which have self as the only child process are shown      |
 | show_thread           | true, false           | false            | Whether the thread information is shown ( Linux only )                       |
 | show_thread_in_tree   | true, false           | true             | Whether the thread information is shown in tree mode ( Linux only )          |
 | show_parent_in_tree   | true, false           | true             | Whether the parent process is shown in tree mode                             |
 | show_children_in_tree | true, false           | true             | Whether the children processes are shown in tree mode                        |
+| show_header           | true, false           | true             | Whether header row is shown                                                  |
+| show_footer           | true, false           | false            | Whether footer row is shown                                                  |
+| show_kthreads         | true, false           | true             | Whether processes which belong to kthread are shown ( Linux only )           |
 | cut_to_terminal       | true, false           | true             | Whether output lines are truncated for output into terminal                  |
 | cut_to_pager          | true, false           | false            | Whether output lines are truncated for output into pager                     |
 | cut_to_pipe           | true, false           | false            | Whether output lines are truncated for output into pipe                      |
@@ -593,21 +659,25 @@ style = "223"     # 223 for both theme
 | descending            | [String]              | ▼                | Descending sort indicator                                                    |
 | tree_symbols          | [String; 5]           |  [│, ─, ┬, ├, └] | Symbols used by tree view                                                    |
 | abbr_sid              | true, false           | true             | Whether machine SID is abbreviated ( Windows only )                          |
+| theme                 | Auto, Dark, Light     | Auto             | Default theme                                                                |
 
 If `color_mode` is `Auto`, color is enabled for terminal and pager, disabled for pipe.
+
+If `theme` is `Auto`, theme is detected from terminal automatically.
+Some terminal don't support the automatic detection, so `Dark` or `Light` can be specified explicitly.
 
 #### `abbr_sid`
 
 Windows SID is too long, so it is abbreviated by default.
 If `abbr_sid` is `false`, SID is fully shown like below:
 
-```
+```text
 S-1-5-21-789457439-2186958450-1652286173-1001
 ```
 
 If `abbr_sid` is `true`, SID is shown like below:
 
-```
+```text
 S-1-5-21-...-1001
 ```
 
@@ -639,6 +709,7 @@ If `column` is 0, value is sorted by the left column.
 | ------------ | --------------------- | -------- | ------------------------------------------------------------------------ |
 | mode         | Auto, Always, Disable | Auto     | The default behavior of pager usage without `--pager` commandline option |
 | detect_width | true, false           | false    | Whether `auto` mode detects terminal width overflow                      |
+| use_builtin  | true, false           | false    | Whether built-in pager is used                                           |
 | command      | [Command]             | less -SR | Pager command                                                            |
 
 If `mode` is `Auto`, pager is used only when output lines exceed terminal height.

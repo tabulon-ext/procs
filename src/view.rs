@@ -1,12 +1,17 @@
+use crate::Opt;
 use crate::column::Column;
 use crate::columns::*;
 use crate::config::*;
+use crate::opt::{ArgColorMode, ArgPagerMode};
 use crate::process::collect_proc;
+use crate::search_regex::SearchRegex;
 use crate::style::{apply_color, apply_style, color_to_column_style};
 use crate::term_info::TermInfo;
-use crate::util::{classify, find_column_kind, find_exact, find_partial, truncate, KeywordClass};
-use crate::Opt;
-use anyhow::{bail, Error};
+use crate::util::{
+    KeywordClass, ansi_trim_end, classify, find_column_kind, find_exact, find_partial,
+    has_regex_syntax, truncate,
+};
+use anyhow::{Error, bail};
 #[cfg(not(target_os = "windows"))]
 use pager::Pager;
 use std::collections::HashMap;
@@ -28,37 +33,56 @@ pub struct View {
 }
 
 impl View {
-    pub fn new(opt: &Opt, config: &Config, clear_by_line: bool) -> Result<Self, Error> {
+    pub fn new(opt: &mut Opt, config: &Config, clear_by_line: bool) -> Result<Self, Error> {
         let mut slot_idx = 0;
         let mut columns = Vec::new();
-        if opt.tree {
-            let kind = ConfigColumnKind::Tree;
-            let column = gen_column(
-                &kind,
-                None,
-                &config.docker.path,
-                &config.display.separator,
-                config.display.abbr_sid,
-                &config.display.tree_symbols,
-            );
-            if column.available() {
-                columns.push(ColumnInfo {
-                    column,
-                    kind,
-                    style: color_to_column_style(&config.style.tree),
-                    nonnumeric_search: false,
-                    numeric_search: false,
-                    align: ConfigColumnAlign::Left,
-                    max_width: None,
-                    min_width: None,
-                    visible: true,
-                });
-            }
-        }
-
         let mut only_kind_found = false;
 
-        for c in &config.columns {
+        // Override style of TreeSlot
+        let tree_slot = ConfigColumn {
+            kind: ConfigColumnKind::TreeSlot,
+            style: color_to_column_style(&config.style.tree),
+            numeric_search: false,
+            nonnumeric_search: false,
+            align: ConfigColumnAlign::Left,
+            max_width: None,
+            min_width: None,
+            header: None,
+        };
+
+        // Adding the sort column to inserts if not already present
+        match (&opt.sorta, &opt.sortd) {
+            (_, Some(col)) | (Some(col), _) if !opt.insert.contains(col) => {
+                opt.insert.push(col.clone());
+            }
+            _ => {}
+        }
+
+        // Add default TreeSlot if there is not TreeSlot in config
+        let config_columns = if config
+            .columns
+            .iter()
+            .all(|x| x.kind != ConfigColumnKind::TreeSlot)
+            && opt.tree
+        {
+            let mut ret = vec![tree_slot];
+            ret.append(&mut config.columns.clone());
+            ret
+        } else {
+            config
+                .columns
+                .iter()
+                .map(|x| {
+                    if x.kind == ConfigColumnKind::TreeSlot {
+                        tree_slot.clone()
+                    } else {
+                        x.clone()
+                    }
+                })
+                .collect()
+        };
+
+        for c in &config_columns {
             let kinds = match &c.kind {
                 ConfigColumnKind::Slot => {
                     let kinds = if let Some(insert) = opt.insert.get(slot_idx) {
@@ -79,17 +103,28 @@ impl View {
                     }
                     kinds
                 }
+                ConfigColumnKind::TreeSlot => {
+                    if opt.tree {
+                        vec![ConfigColumnKind::Tree]
+                    } else {
+                        vec![]
+                    }
+                }
                 x => vec![x.clone()],
             };
 
             for kind in kinds {
-                let visible = if let Some(ref only) = opt.only {
-                    let kind_name = KIND_LIST[&kind].0.to_lowercase();
-                    if kind_name.find(&only.to_lowercase()).is_none() {
-                        false
-                    } else {
-                        only_kind_found = true;
+                let visible = if let Some(only) = &opt.only {
+                    if kind == ConfigColumnKind::Tree {
                         true
+                    } else {
+                        let kind_name = KIND_LIST[&kind].0.to_lowercase();
+                        if !kind_name.contains(&only.to_lowercase()) {
+                            false
+                        } else {
+                            only_kind_found = true;
+                            true
+                        }
                     }
                 } else {
                     true
@@ -102,6 +137,7 @@ impl View {
                     &config.display.separator,
                     config.display.abbr_sid,
                     &config.display.tree_symbols,
+                    opt.procfs.clone(),
                 );
                 if column.available() {
                     columns.push(ColumnInfo {
@@ -120,13 +156,16 @@ impl View {
         }
 
         if slot_idx < opt.insert.len() {
-            bail!("There is not enough slot for inserting columns {:?}.\nPlease add \"Slot\" or \"MultiSlot\" to your config.\nhttps://github.com/dalance/procs#insert-column", opt.insert);
+            bail!(
+                "There is not enough slot for inserting columns {:?}.\nPlease add \"Slot\" or \"MultiSlot\" to your config.\nhttps://github.com/dalance/procs#insert-column",
+                opt.insert
+            );
         }
 
-        if let Some(ref only_kind) = opt.only {
-            if !only_kind_found {
-                bail!("kind \"{}\" is not found in columns", only_kind);
-            }
+        if let Some(only_kind) = &opt.only
+            && !only_kind_found
+        {
+            bail!("kind \"{}\" is not found in columns", only_kind);
         }
 
         let show_thread = if opt.thread {
@@ -137,16 +176,21 @@ impl View {
             config.display.show_thread
         };
 
-        let proc = collect_proc(Duration::from_millis(opt.interval), show_thread);
+        let proc = collect_proc(
+            Duration::from_millis(opt.interval),
+            show_thread,
+            config.display.show_kthreads,
+            &opt.procfs,
+        );
         for c in columns.iter_mut() {
             for p in &proc {
-                c.column.add(&p);
+                c.column.add(p);
             }
         }
 
         let mut parent_pids = HashMap::new();
         let mut child_pids = HashMap::<i32, Vec<i32>>::new();
-        if opt.tree {
+        if opt.tree || !config.display.show_self_parents {
             for p in &proc {
                 parent_pids.insert(p.pid, p.ppid);
                 if let Some(x) = child_pids.get_mut(&p.ppid) {
@@ -157,7 +201,7 @@ impl View {
             }
         }
 
-        let term_info = TermInfo::new(clear_by_line);
+        let term_info = TermInfo::new(clear_by_line, false)?;
         let mut sort_info = View::get_sort_info(opt, config, &columns);
 
         if opt.only.is_some() {
@@ -175,15 +219,20 @@ impl View {
         })
     }
 
-    pub fn filter(&mut self, opt: &Opt, config: &Config) {
+    pub fn filter(&mut self, opt: &Opt, config: &Config, header_lines: usize) -> Result<(), Error> {
         let mut cols_nonnumeric = Vec::new();
         let mut cols_numeric = Vec::new();
+        let mut cols_searchable = Vec::new();
         for c in &self.columns {
             if c.nonnumeric_search {
                 cols_nonnumeric.push(c.column.as_ref());
+                cols_searchable.push(c.column.as_ref());
             }
             if c.numeric_search {
                 cols_numeric.push(c.column.as_ref());
+                if !c.nonnumeric_search {
+                    cols_searchable.push(c.column.as_ref());
+                }
             }
         }
 
@@ -197,11 +246,49 @@ impl View {
             }
         }
 
+        let regex_mode = if opt.regex {
+            true
+        } else if opt.smart {
+            opt.keyword.len() == 1 && has_regex_syntax(&opt.keyword[0])
+        } else {
+            false
+        };
+
+        let regex = if regex_mode && !opt.keyword.is_empty() {
+            let pattern = &opt.keyword[0];
+            let ignore_case = match config.search.case {
+                ConfigSearchCase::Smart => pattern == &pattern.to_ascii_lowercase(),
+                ConfigSearchCase::Insensitive => true,
+                ConfigSearchCase::Sensitive => false,
+            };
+            let regex = SearchRegex::new(pattern, ignore_case)?;
+            Some(regex)
+        } else {
+            None
+        };
+
         let pids = self.columns[self.sort_info.idx]
             .column
             .sorted_pid(&self.sort_info.order);
 
         let self_pid = std::process::id() as i32;
+
+        let self_parents = if !config.display.show_self_parents {
+            let mut self_parents = Vec::new();
+            self.get_parent_pids(self_pid, &mut self_parents);
+            self_parents
+                .into_iter()
+                .filter(|x| {
+                    if let Some(x) = self.child_pids.get(x) {
+                        x.len() == 1
+                    } else {
+                        false
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let logic = if opt.and {
             ConfigSearchLogic::And
@@ -217,10 +304,15 @@ impl View {
 
         let mut candidate_pids = Vec::new();
         for pid in &pids {
-            let candidate = if !config.display.show_self && *pid == self_pid {
+            let hidden_process = (!config.display.show_self && *pid == self_pid)
+                || (!config.display.show_self_parents && self_parents.contains(pid));
+
+            let candidate = if hidden_process {
                 false
             } else if opt.keyword.is_empty() {
                 true
+            } else if let Some(regex) = &regex {
+                View::search_regex(*pid, cols_searchable.as_slice(), regex)?
             } else {
                 View::search(
                     *pid,
@@ -228,7 +320,7 @@ impl View {
                     &keyword_nonnumeric,
                     cols_numeric.as_slice(),
                     cols_nonnumeric.as_slice(),
-                    &config,
+                    config,
                     &logic,
                 )
             };
@@ -266,21 +358,23 @@ impl View {
                 visible_pids.push(*pid);
             }
 
-            if opt.watch_mode && visible_pids.len() >= self.term_info.height - 5 {
+            let reserved_rows = 4 + header_lines;
+            if opt.watch_mode && visible_pids.len() >= self.term_info.height - reserved_rows {
                 break;
             }
         }
 
         self.visible_pids = visible_pids;
         self.auxiliary_pids = auxiliary_pids;
+        Ok(())
     }
 
     fn get_parent_pids(&self, pid: i32, parent_pids: &mut Vec<i32>) {
-        if let Some(x) = self.parent_pids.get(&pid) {
-            if !parent_pids.contains(x) {
-                parent_pids.push(*x);
-                self.get_parent_pids(*x, parent_pids);
-            }
+        if let Some(x) = self.parent_pids.get(&pid)
+            && !parent_pids.contains(x)
+        {
+            parent_pids.push(*x);
+            self.get_parent_pids(*x, parent_pids);
         }
     }
 
@@ -304,7 +398,7 @@ impl View {
             };
             c.column.apply_visible(&self.visible_pids);
             let min_width = min_widths.get(&i).map(|x| Some(*x)).unwrap_or(c.min_width);
-            c.column.reset_width(order, &config, c.max_width, min_width);
+            c.column.reset_width(order, config, c.max_width, min_width);
             for pid in &self.visible_pids {
                 c.column.update_width(*pid, c.max_width);
             }
@@ -317,6 +411,12 @@ impl View {
         config: &Config,
         theme: &ConfigTheme,
     ) -> Result<(), Error> {
+        if opt.json {
+            self.term_info.use_pager = false;
+            self.display_json()?;
+            return Ok(());
+        }
+
         let use_terminal = console::user_attended();
 
         // +3 means header/unit line and next prompt
@@ -331,46 +431,55 @@ impl View {
                 + self.columns.len()
                 - 1
         } else {
-            std::usize::MIN
+            usize::MIN
         };
 
-        let use_pager = if cfg!(target_os = "windows") {
-            false
+        let use_builtin_pager = if cfg!(target_os = "windows") {
+            true
         } else {
-            match (opt.watch_mode, opt.pager.as_ref(), &config.pager.mode) {
-                (true, _, _) => false,
-                (false, Some(x), _) if x == "auto" => {
-                    self.term_info.height < pager_threshold_height
-                        || self.term_info.width < pager_threshold_width
-                }
-                (false, Some(x), _) if x == "always" => true,
-                (false, Some(x), _) if x == "disable" => false,
-                (false, None, ConfigPagerMode::Auto) => {
-                    self.term_info.height < pager_threshold_height
-                        || self.term_info.width < pager_threshold_width
-                }
-                (false, None, ConfigPagerMode::Always) => true,
-                (false, None, ConfigPagerMode::Disable) => false,
-                _ => false,
-            }
+            config.pager.use_builtin
         };
 
-        let mut truncate = use_terminal && use_pager && config.display.cut_to_pager;
+        let use_pager = match (opt.watch_mode, opt.pager.as_ref(), &config.pager.mode) {
+            (true, _, _) => false,
+            (false, Some(ArgPagerMode::Auto), _) => {
+                self.term_info.height < pager_threshold_height
+                    || self.term_info.width < pager_threshold_width
+            }
+            (false, Some(ArgPagerMode::Always), _) => true,
+            (false, Some(ArgPagerMode::Disable), _) => false,
+            (false, None, ConfigPagerMode::Auto) => {
+                self.term_info.height < pager_threshold_height
+                    || self.term_info.width < pager_threshold_width
+            }
+            (false, None, ConfigPagerMode::Always) => true,
+            (false, None, ConfigPagerMode::Disable) => false,
+        };
+
+        // Minus doesn't support horizontal scroll yet
+        // https://github.com/arijit79/minus/issues/59
+        let cut_to_pager = if use_builtin_pager {
+            true
+        } else {
+            config.display.cut_to_pager
+        };
+
+        let mut truncate = use_terminal && use_pager && cut_to_pager;
         truncate |= use_terminal && !use_pager && config.display.cut_to_terminal;
         truncate |= !use_terminal && config.display.cut_to_pipe;
 
         if !truncate {
-            self.term_info.width = std::usize::MAX;
+            self.term_info.width = usize::MAX;
         }
 
         match (opt.color.as_ref(), &config.display.color_mode) {
-            (Some(x), _) if x == "auto" => {
+            (Some(ArgColorMode::Auto), _) => {
                 if use_pager && use_terminal {
                     console::set_colors_enabled(true);
                 }
             }
-            (Some(x), _) if x == "always" => console::set_colors_enabled(true),
-            (Some(x), _) if x == "disable" => console::set_colors_enabled(false),
+            (Some(ArgColorMode::Always), _) => console::set_colors_enabled(true),
+            (Some(ArgColorMode::Disable), _) => console::set_colors_enabled(false),
             (None, ConfigColorMode::Auto) => {
                 if use_pager && use_terminal {
                     console::set_colors_enabled(true);
@@ -378,30 +487,42 @@ impl View {
             }
             (None, ConfigColorMode::Always) => console::set_colors_enabled(true),
             (None, ConfigColorMode::Disable) => console::set_colors_enabled(false),
-            _ => (),
         }
 
         if use_pager {
-            View::pager(&config);
+            if use_builtin_pager {
+                self.term_info.use_pager = true;
+            } else {
+                View::pager(config);
+            }
         }
 
-        if !opt.no_header {
+        if !opt.no_header && config.display.show_header {
             // Ignore display_* error
             //   `Broken pipe` may occur at pager mode. It can be ignored safely.
-            let _ = self.display_header(&config, theme);
-            let _ = self.display_unit(&config, theme);
+            let _ = self.display_header(config, theme);
+            let _ = self.display_unit(config, theme);
         }
 
         for pid in &self.visible_pids {
             let auxiliary = self.auxiliary_pids.contains(pid);
-            let _ = self.display_content(&config, *pid, theme, auxiliary);
+            let _ = self.display_content(config, *pid, theme, auxiliary);
+        }
+
+        if !opt.no_header && config.display.show_footer {
+            let _ = self.display_unit(config, theme);
+            let _ = self.display_header(config, theme);
+        }
+
+        if self.term_info.use_pager {
+            minus::page_all(self.term_info.pager.replace(None).unwrap())?;
         }
 
         Ok(())
     }
 
     fn display_header(&self, config: &Config, theme: &ConfigTheme) -> Result<(), Error> {
-        let mut row = String::from("");
+        let mut row = String::new();
         for (i, c) in self.columns.iter().enumerate() {
             if c.visible {
                 let order = if i == self.sort_info.idx {
@@ -421,14 +542,14 @@ impl View {
                 );
             }
         }
-        row = row.trim_end().to_string();
+        row = ansi_trim_end(&row);
         row = truncate(&row, self.term_info.width).to_string();
         self.term_info.write_line(&row)?;
         Ok(())
     }
 
     fn display_unit(&self, config: &Config, theme: &ConfigTheme) -> Result<(), Error> {
-        let mut row = String::from("");
+        let mut row = String::new();
         for c in &self.columns {
             if c.visible {
                 row = format!(
@@ -443,7 +564,7 @@ impl View {
                 );
             }
         }
-        row = row.trim_end().to_string();
+        row = ansi_trim_end(&row);
         row = truncate(&row, self.term_info.width).to_string();
         self.term_info.write_line(&row)?;
         Ok(())
@@ -456,7 +577,7 @@ impl View {
         theme: &ConfigTheme,
         auxiliary: bool,
     ) -> Result<(), Error> {
-        let mut row = String::from("");
+        let mut row = String::new();
         for c in &self.columns {
             if c.visible {
                 row = format!(
@@ -472,9 +593,31 @@ impl View {
                 );
             }
         }
-        row = row.trim_end().to_string();
+        row = ansi_trim_end(&row);
         row = truncate(&row, self.term_info.width).to_string();
         self.term_info.write_line(&row)?;
+        Ok(())
+    }
+
+    fn display_json(&self) -> Result<(), Error> {
+        self.term_info.write_line("[")?;
+
+        let len_pid = self.visible_pids.len();
+        for (i, pid) in self.visible_pids.iter().enumerate() {
+            let fields: Vec<String> = self
+                .columns
+                .iter()
+                .filter(|c| c.visible && c.kind != ConfigColumnKind::Separator)
+                .map(|c| c.column.display_json(*pid))
+                .collect();
+            let mut line = json_object(&fields);
+            if i != len_pid - 1 {
+                line.push(',');
+            }
+            self.term_info.write_line(&line)?;
+        }
+
+        self.term_info.write_line("]")?;
         Ok(())
     }
 
@@ -485,7 +628,7 @@ impl View {
                 let mut order = config.sort.order.clone();
                 for (i, c) in cols.iter().enumerate() {
                     let (kind, _) = KIND_LIST[&c.kind];
-                    if kind.to_lowercase().find(&sort.to_lowercase()).is_some() {
+                    if kind.to_lowercase().contains(&sort.to_lowercase()) {
                         idx = i;
                         order = if opt.sorta.is_some() {
                             ConfigSortOrder::Ascending
@@ -501,7 +644,10 @@ impl View {
         };
 
         if opt.tree {
-            sort_idx = 0;
+            sort_idx = cols
+                .iter()
+                .position(|x| x.kind == ConfigColumnKind::Tree)
+                .unwrap();
         }
 
         SortInfo {
@@ -520,14 +666,36 @@ impl View {
         logic: &ConfigSearchLogic,
     ) -> bool {
         let ret_nonnumeric = match config.search.nonnumeric_search {
-            ConfigSearchKind::Partial => {
-                find_partial(cols_nonnumeric, pid, keyword_nonnumeric, logic)
-            }
-            ConfigSearchKind::Exact => find_exact(cols_nonnumeric, pid, keyword_nonnumeric, logic),
+            ConfigSearchKind::Partial => find_partial(
+                cols_nonnumeric,
+                pid,
+                keyword_nonnumeric,
+                logic,
+                &config.search.case,
+            ),
+            ConfigSearchKind::Exact => find_exact(
+                cols_nonnumeric,
+                pid,
+                keyword_nonnumeric,
+                logic,
+                &config.search.case,
+            ),
         };
         let ret_numeric = match config.search.numeric_search {
-            ConfigSearchKind::Partial => find_partial(cols_numeric, pid, keyword_numeric, logic),
-            ConfigSearchKind::Exact => find_exact(cols_numeric, pid, keyword_numeric, logic),
+            ConfigSearchKind::Partial => find_partial(
+                cols_numeric,
+                pid,
+                keyword_numeric,
+                logic,
+                &config.search.case,
+            ),
+            ConfigSearchKind::Exact => find_exact(
+                cols_numeric,
+                pid,
+                keyword_numeric,
+                logic,
+                &config.search.case,
+            ),
         };
         match logic {
             ConfigSearchLogic::And => ret_nonnumeric & ret_numeric,
@@ -537,10 +705,19 @@ impl View {
         }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    fn search_regex(pid: i32, cols: &[&dyn Column], regex: &SearchRegex) -> Result<bool, Error> {
+        for c in cols {
+            if regex.is_match(&c.display_json(pid))? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    #[cfg(not(any(target_os = "windows", any(target_os = "linux", target_os = "android"))))]
     fn pager(config: &Config) {
         if let Some(ref pager) = config.pager.command {
-            Pager::with_pager(&pager).setup();
+            Pager::with_pager(pager).setup();
         } else if which::which("less").is_ok() {
             Pager::with_pager("less -SR").setup();
         } else {
@@ -548,16 +725,16 @@ impl View {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn pager(config: &Config) {
         if let Some(ref pager) = config.pager.command {
-            Pager::with_pager(&pager)
-                // workaround for default less charset is "acsii" on some environments (ex. Ubuntu)
-                .pager_envs(&["LESSCHARSET=utf-8"])
+            Pager::with_pager(pager)
+                // workaround for default less charset is "ascii" on some environments (ex. Ubuntu)
+                .pager_envs(["LESSCHARSET=utf-8\0"])
                 .setup();
         } else if which::which("less").is_ok() {
             Pager::with_pager("less -SR")
-                .pager_envs(&["LESSCHARSET=utf-8"])
+                .pager_envs(["LESSCHARSET=utf-8\0"])
                 .setup();
         } else {
             Pager::with_pager("more -f").setup();
@@ -567,7 +744,6 @@ impl View {
     #[cfg(target_os = "windows")]
     fn pager(_config: &Config) {}
 
-    #[cfg_attr(tarpaulin, skip)]
     pub fn inc_sort_column(&mut self) -> usize {
         let current = self.sort_info.idx;
         let max_idx = self.columns.len();
@@ -581,7 +757,6 @@ impl View {
         current
     }
 
-    #[cfg_attr(tarpaulin, skip)]
     pub fn dec_sort_column(&mut self) -> usize {
         let current = self.sort_info.idx;
         let max_idx = self.columns.len();
@@ -593,5 +768,36 @@ impl View {
             }
         }
         current
+    }
+}
+
+/// Builds one JSON object row. Columns without a JSON representation
+/// (e.g. Tree) yield an empty string and must not produce a separator.
+fn json_object(fields: &[String]) -> String {
+    let fields: Vec<&str> = fields
+        .iter()
+        .map(String::as_str)
+        .filter(|x| !x.is_empty())
+        .collect();
+    format!("{{{}}}", fields.join(", "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::json_object;
+
+    #[test]
+    fn json_object_skips_columns_without_json() {
+        assert_eq!(json_object(&[]), "{}");
+        assert_eq!(json_object(&[r#""PID": 1"#.into()]), r#"{"PID": 1}"#);
+        // a hidden (--only) or Tree column contributes nothing, not a comma
+        assert_eq!(
+            json_object(&["".into(), r#""PID": 1"#.into(), "".into()]),
+            r#"{"PID": 1}"#
+        );
+        assert_eq!(
+            json_object(&[r#""PID": 1"#.into(), r#""CPU": 0"#.into()]),
+            r#"{"PID": 1, "CPU": 0}"#
+        );
     }
 }

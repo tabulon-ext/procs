@@ -4,7 +4,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::str::FromStr;
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Functions for serde defalut
+// Functions for serde default
 // ---------------------------------------------------------------------------------------------------------------------
 
 fn default_true() -> bool {
@@ -13,6 +13,10 @@ fn default_true() -> bool {
 
 fn default_false() -> bool {
     false
+}
+
+fn default_column_style_by_unit() -> ConfigColumnStyle {
+    ConfigColumnStyle::ByUnit
 }
 
 fn default_column_align_left() -> ConfigColumnAlign {
@@ -37,6 +41,10 @@ fn default_search_kind_partial() -> ConfigSearchKind {
 
 fn default_search_logic_and() -> ConfigSearchLogic {
     ConfigSearchLogic::And
+}
+
+fn default_search_case_smart() -> ConfigSearchCase {
+    ConfigSearchCase::Smart
 }
 
 fn default_sort_order_ascending() -> ConfigSortOrder {
@@ -159,7 +167,7 @@ fn serialize_color(c: &ConfigColor) -> String {
         ConfigColor::Magenta => "Magenta".to_string(),
         ConfigColor::Cyan => "Cyan".to_string(),
         ConfigColor::White => "White".to_string(),
-        ConfigColor::Color256(x) => format!("{}", x),
+        ConfigColor::Color256(x) => format!("{x}"),
     }
 }
 
@@ -194,12 +202,12 @@ fn serialize_color_by_theme(c: &ConfigColorByTheme) -> String {
     } else {
         let dark = serialize_color(dark);
         let light = serialize_color(light);
-        format!("{}|{}", dark, light)
+        format!("{dark}|{light}")
     }
 }
 
 fn deserialize_color_by_theme(s: &str) -> Option<ConfigColorByTheme> {
-    if let Some(i) = s.find("|") {
+    if let Some(i) = s.find('|') {
         let (dark, light) = s.split_at(i);
         let light = &light[1..];
         let dark = deserialize_color(dark)?;
@@ -236,7 +244,7 @@ impl<'de> serde::Deserialize<'de> for ConfigColorByTheme {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        deserialize_color_by_theme(&s).ok_or(serde::de::Error::custom(""))
+        deserialize_color_by_theme(&s).ok_or_else(|| serde::de::Error::custom(""))
     }
 }
 
@@ -274,7 +282,8 @@ impl<'de> serde::Deserialize<'de> for ConfigColumnStyle {
             "ByState" => Ok(ConfigColumnStyle::ByState),
             "ByUnit" => Ok(ConfigColumnStyle::ByUnit),
             s => {
-                let c = deserialize_color_by_theme(s).ok_or(serde::de::Error::custom(""))?;
+                let c =
+                    deserialize_color_by_theme(s).ok_or_else(|| serde::de::Error::custom(""))?;
                 Ok(ConfigColumnStyle::Fixed(c))
             }
         }
@@ -291,6 +300,7 @@ pub enum ConfigColumnAlign {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigColumn {
     pub kind: ConfigColumnKind,
+    #[serde(default = "default_column_style_by_unit")]
     pub style: ConfigColumnStyle,
     #[serde(default = "default_false")]
     pub numeric_search: bool,
@@ -473,6 +483,8 @@ pub struct ConfigSearch {
     pub nonnumeric_search: ConfigSearchKind,
     #[serde(default = "default_search_logic_and")]
     pub logic: ConfigSearchLogic,
+    #[serde(default = "default_search_case_smart")]
+    pub case: ConfigSearchCase,
 }
 
 impl Default for ConfigSearch {
@@ -481,6 +493,7 @@ impl Default for ConfigSearch {
             numeric_search: ConfigSearchKind::Exact,
             nonnumeric_search: ConfigSearchKind::Partial,
             logic: ConfigSearchLogic::And,
+            case: ConfigSearchCase::Smart,
         }
     }
 }
@@ -500,9 +513,18 @@ pub enum ConfigSearchLogic {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ConfigSearchCase {
+    Smart,
+    Insensitive,
+    Sensitive,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigDisplay {
     #[serde(default = "default_false")]
     pub show_self: bool,
+    #[serde(default = "default_false")]
+    pub show_self_parents: bool,
     #[serde(default = "default_false")]
     pub show_thread: bool,
     #[serde(default = "default_true")]
@@ -511,6 +533,10 @@ pub struct ConfigDisplay {
     pub show_parent_in_tree: bool,
     #[serde(default = "default_true")]
     pub show_children_in_tree: bool,
+    #[serde(default = "default_true")]
+    pub show_header: bool,
+    #[serde(default = "default_false")]
+    pub show_footer: bool,
     #[serde(default = "default_true")]
     pub cut_to_terminal: bool,
     #[serde(default = "default_false")]
@@ -531,16 +557,21 @@ pub struct ConfigDisplay {
     pub abbr_sid: bool,
     #[serde(default = "default_theme_auto")]
     pub theme: ConfigTheme,
+    #[serde(default = "default_true")]
+    pub show_kthreads: bool,
 }
 
 impl Default for ConfigDisplay {
     fn default() -> Self {
         ConfigDisplay {
             show_self: false,
+            show_self_parents: false,
             show_thread: false,
             show_thread_in_tree: true,
             show_parent_in_tree: true,
             show_children_in_tree: true,
+            show_header: true,
+            show_footer: false,
             cut_to_terminal: true,
             cut_to_pager: false,
             cut_to_pipe: false,
@@ -557,6 +588,7 @@ impl Default for ConfigDisplay {
             ],
             abbr_sid: true,
             theme: ConfigTheme::Auto,
+            show_kthreads: true,
         }
     }
 }
@@ -599,7 +631,8 @@ pub struct ConfigDocker {
 impl Default for ConfigDocker {
     fn default() -> Self {
         ConfigDocker {
-            path: String::from("unix:///var/run/docker.sock"),
+            path: std::env::var("DOCKER_HOST")
+                .unwrap_or(String::from("unix:///var/run/docker.sock")),
         }
     }
 }
@@ -610,6 +643,8 @@ pub struct ConfigPager {
     pub mode: ConfigPagerMode,
     #[serde(default = "default_false")]
     pub detect_width: bool,
+    #[serde(default = "default_false")]
+    pub use_builtin: bool,
     pub command: Option<String>,
 }
 
@@ -618,6 +653,7 @@ impl Default for ConfigPager {
         ConfigPager {
             mode: ConfigPagerMode::Auto,
             detect_width: false,
+            use_builtin: false,
             command: None,
         }
     }

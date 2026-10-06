@@ -1,6 +1,143 @@
 # Change Log
 
-## [Unreleased](https://github.com/dalance/procs/compare/v0.12.0...Unreleased) - ReleaseDate
+## [Unreleased](https://github.com/dalance/procs/compare/v0.14.12...Unreleased) - ReleaseDate
+
+* [Added] Arch column for Windows (process image architecture)
+* [Added] Real Command column for Windows (command line arguments). This column was printing pure file name, which is now moved to FileName column.
+* [Added] Priority column for Windows (user-mode priority class)
+* [Added] RtPriority column for Windows (kernel base priority)
+* [Added] Threads column for Windows (thread count)
+* [Added] Session column for Windows (session ID)
+* [Added] State column for Windows (scheduler state derived from thread states)
+* [Added] Env column for Windows (environment variables)
+* [Added] RecvBytes and SendBytes columns for Windows (network I/O rate; needs Windows 11 or later)
+* [Added] WorkDir column for Windows (current working directory)
+* [Added] `--thread` support for Windows
+* [Changed] Group and Gid columns for Windows read the process token only when the column is displayed
+* [Fixed] ReadBytes / WriteBytes divided by a mis-scaled interval (seconds added to milliseconds)
+* [Fixed] Fix invalid JSON output when a column is skipped by --only or --tree
+
+## [v0.14.12](https://github.com/dalance/procs/compare/v0.14.11...v0.14.12) - 2026-06-25
+
+* [Added] Add fancy regex fallback for advanced filters [#913](https://github.com/dalance/procs/pull/913)
+* [Added] Add regex filtering support (Fixes #554) [#882](https://github.com/dalance/procs/pull/882)
+* [Added] Add shell completion kind values and man page generation [#878](https://github.com/dalance/procs/pull/878)
+
+## [v0.14.11](https://github.com/dalance/procs/compare/v0.14.10...v0.14.11) - 2026-02-27
+
+* [Changed] use actual macos memory usage from libproc pid_rusage [#800](https://github.com/dalance/procs/pull/800)
+* [Added] Add nvcsw and nivcsw [#772](https://github.com/dalance/procs/pull/772)
+* [Fixed] Fix double-spaced TTY output caused by ANSI-unaware trim_end [#875](https://github.com/dalance/procs/pull/875)
+* [Fixed] Fix panic caused by --only and --tree [#839](https://github.com/dalance/procs/pull/839)
+* [Fixed] Do not print separators in JSON output [#763](https://github.com/dalance/procs/pull/763)
+
+## [v0.14.10](https://github.com/dalance/procs/compare/v0.14.9...v0.14.10) - 2025-03-28
+
+* [Added] Add Arch column for macOS (Rosetta 2) [#759](https://github.com/dalance/procs/pull/759)
+* [Added] Add JSON output support [#735](https://github.com/dalance/procs/pull/735)
+* [Changed] Generate shell completions at build time [#739](https://github.com/dalance/procs/pull/739)
+* [Fixed] Trim null byte from /proc/<pid>/attr/current [#733](https://github.com/dalance/procs/pull/733)
+
+## [v0.14.9](https://github.com/dalance/procs/compare/v0.14.8...v0.14.9) - 2025-01-17
+
+* [Fixed] Build failure on FreeBSD
+
+## [v0.14.8](https://github.com/dalance/procs/compare/v0.14.7...v0.14.8) - 2024-10-23
+
+* [Fixed] Build breaks on FreeBSD [#703](https://github.com/dalance/procs/issues/703)
+
+## [v0.14.7](https://github.com/dalance/procs/compare/v0.14.6...v0.14.7) - 2024-10-22
+
+* [Changed] Header line wrapping [#695](https://github.com/dalance/procs/pull/695)
+* [Fixed] First key press is ignored [#443](https://github.com/dalance/procs/issues/443)
+
+## [v0.14.6](https://github.com/dalance/procs/compare/v0.14.5...v0.14.6) - 2024-07-30
+
+* [Changed] MSRV to Rust 1.74
+* [Added] aarch64-apple-darwin build release
+
+## [v0.14.5](https://github.com/dalance/procs/compare/v0.14.4...v0.14.5) - 2024-03-07
+
+* [Added] Add show_self_parents option [#607](https://github.com/dalance/procs/pull/607)
+* [Changed] MSRV to Rust 1.70
+
+## [v0.14.4](https://github.com/dalance/procs/compare/v0.14.3...v0.14.4) - 2023-11-24
+
+* [Fixed] Build breaks on FreeBSD/arm64,i386
+
+## [v0.14.3](https://github.com/dalance/procs/compare/v0.14.2...v0.14.3) - 2023-10-20
+
+* [Changed] MSRV to Rust 1.67
+* [Added] Some columns on FreeBSD
+
+## [v0.14.2](https://github.com/dalance/procs/compare/v0.14.1...v0.14.2) - 2023-10-18
+
+* [Added] BSD support [#313](https://github.com/dalance/procs/issues/313)
+* [Fixed] wrong time handling on Windows
+* [Added] User/group cache support
+* [Added] Cgroup/Ccgroup column [#529](https://github.com/dalance/procs/issues/529)
+
+## [v0.14.1](https://github.com/dalance/procs/compare/v0.14.0...v0.14.1) - 2023-10-06
+
+* [Added] Also look for a config file in /etc/procs/procs.toml [#533](https://github.com/dalance/procs/pull/533)
+* [Added] less compatible keybinding of built-in pager
+* [Added] `show_kthreads` config [#446](https://github.com/dalance/procs/pull/446)
+* [Fixed] procs -i Pid displays Parent PID, not PID, sometimes [#457](https://github.com/dalance/procs/issues/457)
+
+## [v0.14.0](https://github.com/dalance/procs/compare/v0.13.4...v0.14.0) - 2023-03-07
+
+* [Changed] `--config` option to `--gen-config`
+* [Changed] `--completion` option to `--gen-completion`
+* [Changed] `--completion-out` option to `--gen-completion-out`
+* [Added] `--load-config` option to specify config file [#394](https://github.com/dalance/procs/issues/394)
+* [Added] `--use-config` option to specify built-in config [#152](https://github.com/dalance/procs/pull/152)
+* [Added] `show_header` and `show_footer` config [#405](https://github.com/dalance/procs/issues/405)
+* [Added] SecContext column [#260](https://github.com/dalance/procs/issues/260)
+* [Added] FileName column [#429](https://github.com/dalance/procs/issues/429)
+* [Added] WorkDir column [#410](https://github.com/dalance/procs/issues/410)
+* [Added] Env column [#143](https://github.com/dalance/procs/issues/143)
+* [Added] Built-in pager and Windows pager support [#119](https://github.com/dalance/procs/issues/119)
+* [Fixed] hang on terminals which ignore DSR request [#288](https://github.com/dalance/procs/issues/288)
+* [Fixed] Column UserLogin shows 4294967295 [#441](https://github.com/dalance/procs/issues/441)
+
+## [v0.13.4](https://github.com/dalance/procs/compare/v0.13.3...v0.13.4) - 2023-01-29
+
+* [Added] adding sort column to inserts [#396](https://github.com/dalance/procs/pull/396)
+* [Added] docker: Respect $DOCKER_HOST [#424](https://github.com/dalance/procs/pull/424)
+
+## [v0.13.3](https://github.com/dalance/procs/compare/v0.13.2...v0.13.3) - 2022-10-18
+
+* [Changed] Release zip for Windows has the exe at toplevel
+
+## [v0.13.2](https://github.com/dalance/procs/compare/v0.13.1...v0.13.2) - 2022-10-05
+
+* [Fixed] invalid charset name issue [#366](https://github.com/dalance/procs/issues/366)
+
+## [v0.13.1](https://github.com/dalance/procs/compare/v0.13.0...v0.13.1) - 2022-09-20
+
+* [Added] session column on macOS [#361](https://github.com/dalance/procs/pull/361)
+
+## [v0.13.0](https://github.com/dalance/procs/compare/v0.12.3...v0.13.0) - 2022-07-29
+
+* [Changed] Update procfs to v0.13.0
+* [Changed] Use once_cell instead of lazy_static
+* [Added] Case sensitivity option [#159](https://github.com/dalance/procs/issues/159)
+* [Added] TreeSlot column [#196](https://github.com/dalance/procs/issues/196)
+* [Added] Add TcpPort column support for Windows [#318](https://github.com/dalance/procs/pull/318)
+* [Changed] Update dockworker to v0.0.24
+
+## [v0.12.3](https://github.com/dalance/procs/compare/v0.12.2...v0.12.3) - 2022-05-25
+
+* [Fixed] Using bash on Emacs, procs-0.12.2 is very slow compared to procs-0.11.13 [#291](https://github.com/dalance/procs/issues/291)
+
+## [v0.12.2](https://github.com/dalance/procs/compare/v0.12.1...v0.12.2) - 2022-05-05
+
+* [Changed] Update Makefile to change release zip names [#279](https://github.com/dalance/procs/pull/279)
+
+## [v0.12.1](https://github.com/dalance/procs/compare/v0.12.0...v0.12.1) - 2022-01-27
+
+* [Fixed] latency based termbg timeout [#221](https://github.com/dalance/procs/issues/221)
+* [Fixed] wrong decode of cgroup for docker [#236](https://github.com/dalance/procs/issues/236)
 
 ## [v0.12.0](https://github.com/dalance/procs/compare/v0.11.13...v0.12.0) - 2022-01-18
 
@@ -148,7 +285,7 @@
 
 * [Added] cargo feature to build without docker dependencies [#41](https://github.com/dalance/procs/issues/41)
 * [Changed] remove unmaintained crates [#41](https://github.com/dalance/procs/issues/41)
-* [Fixed] garbage charactors in watch mode
+* [Fixed] garbage characters in watch mode
 
 ## [v0.9.9](https://github.com/dalance/procs/compare/v0.9.8...v0.9.9) - 2020-02-12
 
@@ -277,13 +414,13 @@
 ## [v0.6.0](https://github.com/dalance/procs/compare/v0.5.8...v0.6.0) - 2019-03-07
 
 * [Added] watch mode
-* [Fixed] panic by truncate inside multi-byte unicode charactor
+* [Fixed] panic by truncate inside multi-byte unicode character
 
 ## [v0.5.8](https://github.com/dalance/procs/compare/v0.5.7...v0.5.8) - 2019-03-06
 
 * [Added] column description to `--list` output
 * [Changed] sort indicator refine
-* [Fixed] wrong column width calculation about full-width charactors
+* [Fixed] wrong column width calculation about full-width characters
 * [Fixed] wrong `By*` style on center/right aligned column
 
 ## [v0.5.7](https://github.com/dalance/procs/compare/v0.5.6...v0.5.7) - 2019-03-05
@@ -364,7 +501,7 @@
 
 ## [v0.4.1](https://github.com/dalance/procs/compare/v0.4.0...v0.4.1) - 2019-02-06
 
-* [Fixed] failure of text width calculation with tab charactor
+* [Fixed] failure of text width calculation with tab character
 
 ## [v0.4.0](https://github.com/dalance/procs/compare/v0.3.5...v0.4.0) - 2019-02-06
 

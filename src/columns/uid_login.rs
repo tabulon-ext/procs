@@ -3,6 +3,8 @@ use crate::{column_default, Column};
 use std::cmp;
 use std::collections::HashMap;
 
+const UID_NOT_SET: u32 = 0xffffffff;
+
 pub struct UidLogin {
     header: String,
     unit: String,
@@ -14,8 +16,8 @@ pub struct UidLogin {
 impl UidLogin {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("LoginUID"));
-        let unit = String::from("");
-        UidLogin {
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -28,14 +30,18 @@ impl UidLogin {
 impl Column for UidLogin {
     fn add(&mut self, proc: &ProcessInfo) {
         let (fmt_content, raw_content) = if let Ok(uid) = proc.curr_proc.loginuid() {
-            (format!("{}", uid), uid)
+            if uid == UID_NOT_SET {
+                (String::new(), uid)
+            } else {
+                (format!("{uid}"), uid)
+            }
         } else {
-            (String::from(""), 0)
+            (String::new(), 0)
         };
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u32);
+    column_default!(u32, true);
 }

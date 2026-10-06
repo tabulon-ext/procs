@@ -14,8 +14,8 @@ pub struct Priority {
 impl Priority {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("Priority"));
-        let unit = String::from("");
-        Priority {
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -25,20 +25,19 @@ impl Priority {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl Column for Priority {
     fn add(&mut self, proc: &ProcessInfo) {
         let raw_content = proc.curr_proc.stat().priority;
-        let fmt_content = format!("{}", raw_content);
+        let fmt_content = format!("{raw_content}");
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(i64);
+    column_default!(i64, true);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "macos")]
 impl Column for Priority {
     fn add(&mut self, proc: &ProcessInfo) {
@@ -49,27 +48,113 @@ impl Column for Priority {
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(i64);
+    column_default!(i64, true);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "windows")]
 impl Column for Priority {
     fn add(&mut self, proc: &ProcessInfo) {
-        let raw_content = i64::from(proc.priority);
-        let fmt_content = match raw_content {
-            0x0020 => String::from("Normal"),
-            0x0040 => String::from("Idle"),
-            0x0080 => String::from("High"),
-            0x0100 => String::from("Realtime"),
-            0x4000 => String::from("BelowNormal"),
-            0x8000 => String::from("AboveNormal"),
-            _ => String::from("Unknown"),
+        // User-mode priority class - what the user configured via Task Manager,
+        // `STARTUPINFO`, or `SetPriorityClass`. It is queried only when this
+        // column is actually displayed: `add` runs once per process for the
+        // processes the column is shown for. The kernel Base Priority lives in
+        // `proc.priority` and is surfaced by the `RtPriority` column.
+        let (raw_content, fmt_content) = match priority_class_of(proc.pid) {
+            Some(class) => (class as i64, priority_class_name(class).to_string()),
+            // Protected processes (e.g. PPL) refuse the open, so fall back to
+            // the kernel Base Priority, which is always available. The class
+            // derived from it is only an approximation.
+            None => {
+                let class = priority_class_from_base(proc.priority);
+                (
+                    class as i64,
+                    format!("{} *", priority_class_name(class)),
+                )
+            },
         };
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(i64);
+    column_default!(i64, true);
+}
+
+#[cfg(target_os = "windows")]
+fn priority_class_of(pid: i32) -> Option<u32> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
+    use windows_sys::Win32::System::Threading::{
+        GetPriorityClass, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    if pid <= 0 {
+        return None;
+    }
+
+    // SAFETY: `pid` is only handed to `OpenProcess`, and the handle it returns
+    // is closed before this function returns.
+    let handle: HANDLE = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid as u32) };
+    if handle.is_null() {
+        return None;
+    }
+
+    let class = unsafe { GetPriorityClass(handle) };
+    unsafe { CloseHandle(handle) };
+
+    // A return of 0 means the call failed.
+    if class == 0 { None } else { Some(class) }
+}
+
+#[cfg(target_os = "windows")]
+fn priority_class_name(class: u32) -> &'static str {
+    use windows_sys::Win32::System::Threading::{
+        ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, HIGH_PRIORITY_CLASS,
+        IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, REALTIME_PRIORITY_CLASS,
+    };
+
+    match class {
+        IDLE_PRIORITY_CLASS => "Idle",
+        BELOW_NORMAL_PRIORITY_CLASS => "BelowNormal",
+        NORMAL_PRIORITY_CLASS => "Normal",
+        ABOVE_NORMAL_PRIORITY_CLASS => "AboveNormal",
+        HIGH_PRIORITY_CLASS => "High",
+        REALTIME_PRIORITY_CLASS => "Realtime",
+        _ => "Unknown",
+    }
+}
+
+/// Approximate a priority class from the kernel Base Priority when
+/// `OpenProcess` is unavailable (e.g. protected processes). The Base Priority
+/// is the class's base value plus any thread-level delta, so the mapping is
+/// only an approximation and the caller wraps the result in parentheses.
+#[cfg(target_os = "windows")]
+fn priority_class_from_base(base: i32) -> u32 {
+    use windows_sys::Win32::System::Threading::{
+        ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, HIGH_PRIORITY_CLASS,
+        IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, REALTIME_PRIORITY_CLASS,
+    };
+
+    // Base priorities: Idle=4, BelowNormal=6, Normal=8, AboveNormal=10,
+    // High=13, Realtime=24. Pick the class whose base value is closest.
+    match base {
+        b if b <= ((4 + 6) / 2) as i32 => IDLE_PRIORITY_CLASS,
+        b if b <= ((6 + 8) / 2) as i32 => BELOW_NORMAL_PRIORITY_CLASS,
+        b if b <= ((8 + 10) / 2) as i32 => NORMAL_PRIORITY_CLASS,
+        b if b <= ((10 + 13) / 2) as i32 => ABOVE_NORMAL_PRIORITY_CLASS,
+        b if b <= ((13 + 24) / 2) as i32 => HIGH_PRIORITY_CLASS,
+        _ => REALTIME_PRIORITY_CLASS,
+    }
+}
+
+#[cfg(target_os = "freebsd")]
+impl Column for Priority {
+    fn add(&mut self, proc: &ProcessInfo) {
+        let raw_content = proc.curr_proc.info.pri.level as i64 - 100;
+        let fmt_content = format!("{raw_content}");
+
+        self.fmt_contents.insert(proc.pid, fmt_content);
+        self.raw_contents.insert(proc.pid, raw_content);
+    }
+
+    column_default!(i64, true);
 }

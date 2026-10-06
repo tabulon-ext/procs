@@ -1,8 +1,8 @@
 use crate::process::ProcessInfo;
 use crate::Column;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use procfs::net::UdpNetEntry;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use procfs::process::FDTarget;
 use std::cmp;
 use std::collections::HashMap;
@@ -13,31 +13,31 @@ pub struct UdpPort {
     fmt_contents: HashMap<i32, String>,
     raw_contents: HashMap<i32, String>,
     width: usize,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     udp_entry: Vec<UdpNetEntry>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     udp6_entry: Vec<UdpNetEntry>,
 }
 
 impl UdpPort {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("UDP"));
-        let unit = String::from("");
-        UdpPort {
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
             header,
             unit,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             udp_entry: procfs::net::udp().unwrap_or_default(),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             udp6_entry: procfs::net::udp6().unwrap_or_default(),
         }
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl Column for UdpPort {
     fn add(&mut self, proc: &ProcessInfo) {
         let fmt_content = if let Ok(fds) = proc.curr_proc.fd() {
@@ -56,12 +56,12 @@ impl Column for UdpPort {
                     ports.push(entry.local_address.port());
                 }
             }
-            ports.sort();
+            ports.sort_unstable();
             ports.dedup();
 
-            format!("{:?}", ports)
+            format!("{ports:?}")
         } else {
-            String::from("")
+            String::new()
         };
         let raw_content = fmt_content.clone();
 
@@ -69,9 +69,9 @@ impl Column for UdpPort {
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    fn find_exact(&self, pid: i32, keyword: &str) -> bool {
+    fn find_exact(&self, pid: i32, keyword: &str, _content_to_lowercase: bool) -> bool {
         if let Some(content) = self.fmt_contents.get(&pid) {
-            let content = content.replace("[", "").replace("]", "");
+            let content = content.replace(['[', ']'], "");
             let content = content.split(',');
             for c in content {
                 if c == keyword {
@@ -87,15 +87,16 @@ impl Column for UdpPort {
     crate::column_default_display_header!();
     crate::column_default_display_unit!();
     crate::column_default_display_content!();
+    crate::column_default_display_json!();
     crate::column_default_find_partial!();
     crate::column_default_sorted_pid!(String);
     crate::column_default_apply_visible!();
     crate::column_default_reset_width!();
     crate::column_default_update_width!();
     crate::column_default_get_width!();
+    crate::column_default_is_numeric!(false);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "macos")]
 impl Column for UdpPort {
     fn add(&mut self, proc: &ProcessInfo) {
@@ -116,9 +117,9 @@ impl Column for UdpPort {
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    fn find_exact(&self, pid: i32, keyword: &str) -> bool {
+    fn find_exact(&self, pid: i32, keyword: &str, _content_to_lowercase: bool) -> bool {
         if let Some(content) = self.fmt_contents.get(&pid) {
-            let content = content.replace("[", "").replace("]", "");
+            let content = content.replace(['[', ']'], "");
             let content = content.split(',');
             for c in content {
                 if c == keyword {
@@ -134,10 +135,12 @@ impl Column for UdpPort {
     crate::column_default_display_header!();
     crate::column_default_display_unit!();
     crate::column_default_display_content!();
+    crate::column_default_display_json!();
     crate::column_default_find_partial!();
     crate::column_default_sorted_pid!(String);
     crate::column_default_apply_visible!();
     crate::column_default_reset_width!();
     crate::column_default_update_width!();
     crate::column_default_get_width!();
+    crate::column_default_is_numeric!(false);
 }

@@ -3,6 +3,9 @@ use crate::{column_default, Column};
 use std::cmp;
 use std::collections::HashMap;
 
+#[cfg(target_os = "windows")]
+use crate::process::{thread_state, wait_reason, ThreadState};
+
 pub struct State {
     header: String,
     unit: String,
@@ -14,8 +17,8 @@ pub struct State {
 impl State {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("State"));
-        let unit = String::from("");
-        State {
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -25,7 +28,7 @@ impl State {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl Column for State {
     fn add(&mut self, proc: &ProcessInfo) {
         let fmt_content = format!("{}", proc.curr_proc.stat().state);
@@ -35,10 +38,9 @@ impl Column for State {
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(String);
+    column_default!(String, false);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "macos")]
 impl Column for State {
     fn add(&mut self, proc: &ProcessInfo) {
@@ -70,12 +72,145 @@ impl Column for State {
             6 => "H",
             _ => "?",
         };
-        let fmt_content = format!("{}", state);
+        let fmt_content = state.to_string();
         let raw_content = fmt_content.clone();
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(String);
+    column_default!(String, false);
+}
+
+#[cfg(target_os = "freebsd")]
+impl Column for State {
+    fn add(&mut self, proc: &ProcessInfo) {
+        let info = &proc.curr_proc.info;
+        let flag = info.flag;
+        let tdflags = info.tdflags;
+        let cr_flags = info.cr_flags;
+        let kiflag = info.kiflag;
+
+        let mut state = match info.stat {
+            libc::SSTOP => "T",
+            libc::SSLEEP => {
+                if (tdflags & libc::TDF_SINTR as i64) != 0 {
+                    if info.slptime >= 20 {
+                        "I"
+                    } else {
+                        "S"
+                    }
+                } else {
+                    "D"
+                }
+            }
+            libc::SRUN | libc::SIDL => "R",
+            libc::SWAIT => "W",
+            libc::SLOCK => "L",
+            libc::SZOMB => "Z",
+            _ => "?",
+        }
+        .to_string();
+        if (flag & libc::P_INMEM as i64) == 0 {
+            state.push_str("W");
+        }
+        if info.nice < libc::NZERO as i8 || info.pri.class == bsd_kvm_sys::PRI_REALTIME as u8 {
+            state.push_str("<");
+        }
+        if info.nice > libc::NZERO as i8 || info.pri.class == bsd_kvm_sys::PRI_IDLE as u8 {
+            state.push_str("N");
+        }
+        if (flag & libc::P_TRACED as i64) != 0 {
+            state.push_str("X");
+        }
+        if (flag & libc::P_WEXIT as i64) != 0 && info.stat != libc::SZOMB as std::os::raw::c_char {
+            state.push_str("E");
+        }
+        if (flag & libc::P_PPWAIT as i64) != 0 {
+            state.push_str("V");
+        }
+        if (flag & libc::P_SYSTEM as i64) != 0 || info.lock > 0 {
+            state.push_str("L");
+        }
+        if (cr_flags & libc::KI_CRF_CAPABILITY_MODE as u32) != 0 {
+            state.push_str("C");
+        }
+        if (kiflag & libc::KI_SLEADER as i64) != 0 {
+            state.push_str("s");
+        }
+        if (flag & libc::P_CONTROLT as i64) != 0 && info.pgid == info.tpgid {
+            state.push_str("+");
+        }
+        if (flag & libc::P_JAILED as i64) != 0 {
+            state.push_str("J");
+        }
+        let fmt_content = state;
+        let raw_content = fmt_content.clone();
+
+        self.fmt_contents.insert(proc.pid, fmt_content);
+        self.raw_contents.insert(proc.pid, raw_content);
+    }
+
+    column_default!(String, false);
+}
+
+// ---------------------------------------------------------------------------
+// Windows
+//
+// There is no per-process state to read: `SYSTEM_PROCESS_INFORMATION` only
+// counts the threads, while `SYSTEM_THREAD_INFORMATION` is what carries the
+// scheduler state. A row is therefore described by the threads behind it.
+// ---------------------------------------------------------------------------
+
+/// The letter `ps` prints for one thread's state.
+///
+/// `WaitReason` is only read while the thread is in `WAITING`: it is a leftover
+/// from the last wait otherwise, and a thread that is runnable again still
+/// carries the reason it sleeps on.
+#[cfg(target_os = "windows")]
+fn thread_state_char(state: ThreadState) -> char {
+    use thread_state::*;
+
+    match state.state {
+        // Runnable, or on its way there: `TRANSITION` only means the kernel
+        // stack is still being brought in.
+        INITIALIZED | READY | RUNNING | STANDBY | TRANSITION | DEFERRED_READY => 'R',
+        WAITING | GATE_WAIT | WAITING_FOR_PROCESS_IN_SWAP => match state.wait_reason {
+            wait_reason::SUSPENDED | wait_reason::WR_SUSPENDED => 'T',
+            _ => 'S',
+        },
+        TERMINATED => 'Z',
+        _ => '?',
+    }
+}
+
+/// The state letter of one row.
+///
+/// `state` is the most active thread's raw state, reduced by the snapshot
+/// layer; `thread_count` is the `NumberOfThreads` the snapshot reported. It
+/// is what separates a process that has no threads left from one whose
+/// records simply could not be read.
+#[cfg(target_os = "windows")]
+fn state_char(state: Option<ThreadState>, thread_count: i32) -> char {
+    match state {
+        // No thread left at all: the process has terminated and is only still
+        // listed because handles to it remain open.
+        None if thread_count <= 0 => 'Z',
+        // Threads were claimed but none could be read: not enough to call it.
+        None => '?',
+        Some(state) => thread_state_char(state),
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Column for State {
+    fn add(&mut self, proc: &ProcessInfo) {
+        let fmt_content = String::from(state_char(proc.state, proc.thread));
+        let raw_content = fmt_content.clone();
+
+        self.fmt_contents.insert(proc.pid, fmt_content);
+        self.raw_contents.insert(proc.pid, raw_content);
+    }
+
+    column_default!(String, false);
 }

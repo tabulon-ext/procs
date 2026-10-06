@@ -14,8 +14,8 @@ pub struct CpuTime {
 impl CpuTime {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("CPU Time"));
-        let unit = String::from("");
-        CpuTime {
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -25,11 +25,11 @@ impl CpuTime {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl Column for CpuTime {
     fn add(&mut self, proc: &ProcessInfo) {
         let time_sec = (proc.curr_proc.stat().utime + proc.curr_proc.stat().stime)
-            / procfs::ticks_per_second().unwrap_or(100) as u64;
+            / procfs::ticks_per_second();
 
         let fmt_content = util::parse_time(time_sec);
         let raw_content = time_sec;
@@ -38,10 +38,9 @@ impl Column for CpuTime {
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "macos")]
 impl Column for CpuTime {
     fn add(&mut self, proc: &ProcessInfo) {
@@ -56,10 +55,9 @@ impl Column for CpuTime {
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "windows")]
 impl Column for CpuTime {
     fn add(&mut self, proc: &ProcessInfo) {
@@ -72,5 +70,24 @@ impl Column for CpuTime {
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
+}
+
+#[cfg(target_os = "freebsd")]
+impl Column for CpuTime {
+    fn add(&mut self, proc: &ProcessInfo) {
+        let time_sec = ((proc.curr_proc.info.rusage.utime.sec * 1_000_000i64
+            + proc.curr_proc.info.rusage.utime.usec
+            + proc.curr_proc.info.rusage.stime.sec * 1_000_000i64
+            + proc.curr_proc.info.rusage.stime.usec)
+            / 1_000_000) as u64;
+
+        let fmt_content = util::parse_time(time_sec);
+        let raw_content = time_sec;
+
+        self.fmt_contents.insert(proc.pid, fmt_content);
+        self.raw_contents.insert(proc.pid, raw_content);
+    }
+
+    column_default!(u64, true);
 }

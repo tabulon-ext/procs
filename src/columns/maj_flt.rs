@@ -14,8 +14,8 @@ pub struct MajFlt {
 impl MajFlt {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("MajorFaults"));
-        let unit = String::from("");
-        MajFlt {
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -25,43 +25,54 @@ impl MajFlt {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl Column for MajFlt {
     fn add(&mut self, proc: &ProcessInfo) {
         let raw_content = proc.curr_proc.stat().majflt;
-        let fmt_content = format!("{}", raw_content);
+        let fmt_content = format!("{raw_content}");
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "macos")]
 impl Column for MajFlt {
     fn add(&mut self, proc: &ProcessInfo) {
         let raw_content = proc.curr_task.ptinfo.pti_pageins as u64;
-        let fmt_content = format!("{}", raw_content);
+        let fmt_content = format!("{raw_content}");
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
 }
 
-#[cfg_attr(tarpaulin, skip)]
 #[cfg(target_os = "windows")]
 impl Column for MajFlt {
     fn add(&mut self, proc: &ProcessInfo) {
         let raw_content = proc.memory_info.page_fault_count;
-        let fmt_content = format!("{}", raw_content);
+        let fmt_content = format!("{raw_content}");
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
+}
+
+#[cfg(target_os = "freebsd")]
+impl Column for MajFlt {
+    fn add(&mut self, proc: &ProcessInfo) {
+        let raw_content = proc.curr_proc.info.rusage.majflt as u64;
+        let fmt_content = format!("{raw_content}");
+
+        self.fmt_contents.insert(proc.pid, fmt_content);
+        self.raw_contents.insert(proc.pid, raw_content);
+    }
+
+    column_default!(u64, true);
 }

@@ -16,7 +16,7 @@ impl VmExe {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("VmExe"));
         let unit = String::from("[bytes]");
-        VmExe {
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -26,6 +26,7 @@ impl VmExe {
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
 impl Column for VmExe {
     fn add(&mut self, proc: &ProcessInfo) {
         let (raw_content, fmt_content) = if let Some(ref curr_status) = proc.curr_status {
@@ -33,15 +34,28 @@ impl Column for VmExe {
                 let val = val.saturating_mul(1024);
                 (val, bytify(val))
             } else {
-                (0, String::from(""))
+                (0, String::new())
             }
         } else {
-            (0, String::from(""))
+            (0, String::new())
         };
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
+}
+
+#[cfg(target_os = "freebsd")]
+impl Column for VmExe {
+    fn add(&mut self, proc: &ProcessInfo) {
+        let raw_content = (proc.curr_proc.info.tsize as u64).saturating_mul(4096);
+        let fmt_content = bytify(raw_content);
+
+        self.fmt_contents.insert(proc.pid, fmt_content);
+        self.raw_contents.insert(proc.pid, raw_content);
+    }
+
+    column_default!(u64, true);
 }

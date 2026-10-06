@@ -11,12 +11,11 @@ pub struct MultiSlot {
     width: usize,
 }
 
-#[cfg_attr(tarpaulin, skip)]
 impl MultiSlot {
     pub fn new() -> Self {
-        let header = String::from("");
-        let unit = String::from("");
-        MultiSlot {
+        let header = String::new();
+        let unit = String::new();
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -26,15 +25,14 @@ impl MultiSlot {
     }
 }
 
-#[cfg_attr(tarpaulin, skip)]
 impl Column for MultiSlot {
     fn add(&mut self, proc: &ProcessInfo) {
-        let raw_content = "".to_string();
-        let fmt_content = "".to_string();
+        let raw_content = String::new();
+        let fmt_content = String::new();
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(String);
+    column_default!(String, false);
 }

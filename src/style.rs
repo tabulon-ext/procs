@@ -1,25 +1,23 @@
 use crate::config::{ConfigColor, ConfigColorByTheme, ConfigColumnStyle, ConfigStyle, ConfigTheme};
 use console::{Style, StyledObject};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
-lazy_static! {
-    static ref BRIGHT_BLACK: Style = Style::new().black().bright();
-    static ref BRIGHT_RED: Style = Style::new().red().bright();
-    static ref BRIGHT_GREEN: Style = Style::new().green().bright();
-    static ref BRIGHT_YELLOW: Style = Style::new().yellow().bright();
-    static ref BRIGHT_BLUE: Style = Style::new().blue().bright();
-    static ref BRIGHT_MAGENTA: Style = Style::new().magenta().bright();
-    static ref BRIGHT_CYAN: Style = Style::new().cyan().bright();
-    static ref BRIGHT_WHITE: Style = Style::new().white().bright();
-    static ref BLACK: Style = Style::new().black();
-    static ref RED: Style = Style::new().red();
-    static ref GREEN: Style = Style::new().green();
-    static ref YELLOW: Style = Style::new().yellow();
-    static ref BLUE: Style = Style::new().blue();
-    static ref MAGENTA: Style = Style::new().magenta();
-    static ref CYAN: Style = Style::new().cyan();
-    static ref WHITE: Style = Style::new().white();
-}
+static BRIGHT_BLACK: Lazy<Style> = Lazy::new(|| Style::new().black().bright());
+static BRIGHT_RED: Lazy<Style> = Lazy::new(|| Style::new().red().bright());
+static BRIGHT_GREEN: Lazy<Style> = Lazy::new(|| Style::new().green().bright());
+static BRIGHT_YELLOW: Lazy<Style> = Lazy::new(|| Style::new().yellow().bright());
+static BRIGHT_BLUE: Lazy<Style> = Lazy::new(|| Style::new().blue().bright());
+static BRIGHT_MAGENTA: Lazy<Style> = Lazy::new(|| Style::new().magenta().bright());
+static BRIGHT_CYAN: Lazy<Style> = Lazy::new(|| Style::new().cyan().bright());
+static BRIGHT_WHITE: Lazy<Style> = Lazy::new(|| Style::new().white().bright());
+static BLACK: Lazy<Style> = Lazy::new(|| Style::new().black());
+static RED: Lazy<Style> = Lazy::new(|| Style::new().red());
+static GREEN: Lazy<Style> = Lazy::new(|| Style::new().green());
+static YELLOW: Lazy<Style> = Lazy::new(|| Style::new().yellow());
+static BLUE: Lazy<Style> = Lazy::new(|| Style::new().blue());
+static MAGENTA: Lazy<Style> = Lazy::new(|| Style::new().magenta());
+static CYAN: Lazy<Style> = Lazy::new(|| Style::new().cyan());
+static WHITE: Lazy<Style> = Lazy::new(|| Style::new().white());
 
 fn apply_style_by_state(
     x: String,
@@ -28,16 +26,16 @@ fn apply_style_by_state(
     faded: bool,
 ) -> StyledObject<String> {
     match x {
-        ref x if x.contains('D') => apply_color(x.to_string(), &s.by_state.color_d, theme, faded),
-        ref x if x.contains('R') => apply_color(x.to_string(), &s.by_state.color_r, theme, faded),
-        ref x if x.contains('S') => apply_color(x.to_string(), &s.by_state.color_s, theme, faded),
-        ref x if x.contains('T') => apply_color(x.to_string(), &s.by_state.color_t, theme, faded),
-        ref x if x.contains('t') => apply_color(x.to_string(), &s.by_state.color_t, theme, faded),
-        ref x if x.contains('Z') => apply_color(x.to_string(), &s.by_state.color_z, theme, faded),
-        ref x if x.contains('X') => apply_color(x.to_string(), &s.by_state.color_x, theme, faded),
-        ref x if x.contains('K') => apply_color(x.to_string(), &s.by_state.color_k, theme, faded),
-        ref x if x.contains('W') => apply_color(x.to_string(), &s.by_state.color_w, theme, faded),
-        ref x if x.contains('P') => apply_color(x.to_string(), &s.by_state.color_p, theme, faded),
+        x if x.contains('D') => apply_color(x.to_string(), &s.by_state.color_d, theme, faded),
+        x if x.contains('R') => apply_color(x.to_string(), &s.by_state.color_r, theme, faded),
+        x if x.contains('S') => apply_color(x.to_string(), &s.by_state.color_s, theme, faded),
+        x if x.contains('T') => apply_color(x.to_string(), &s.by_state.color_t, theme, faded),
+        x if x.contains('t') => apply_color(x.to_string(), &s.by_state.color_t, theme, faded),
+        x if x.contains('Z') => apply_color(x.to_string(), &s.by_state.color_z, theme, faded),
+        x if x.contains('X') => apply_color(x.to_string(), &s.by_state.color_x, theme, faded),
+        x if x.contains('K') => apply_color(x.to_string(), &s.by_state.color_k, theme, faded),
+        x if x.contains('W') => apply_color(x.to_string(), &s.by_state.color_w, theme, faded),
+        x if x.contains('P') => apply_color(x.to_string(), &s.by_state.color_p, theme, faded),
         _ => apply_color(x, &s.by_state.color_x, theme, faded),
     }
 }
@@ -49,11 +47,11 @@ fn apply_style_by_unit(
     faded: bool,
 ) -> StyledObject<String> {
     match x {
-        ref x if x.contains('K') => apply_color(x.to_string(), &s.by_unit.color_k, theme, faded),
-        ref x if x.contains('M') => apply_color(x.to_string(), &s.by_unit.color_m, theme, faded),
-        ref x if x.contains('G') => apply_color(x.to_string(), &s.by_unit.color_g, theme, faded),
-        ref x if x.contains('T') => apply_color(x.to_string(), &s.by_unit.color_t, theme, faded),
-        ref x if x.contains('P') => apply_color(x.to_string(), &s.by_unit.color_p, theme, faded),
+        x if x.contains('K') => apply_color(x.to_string(), &s.by_unit.color_k, theme, faded),
+        x if x.contains('M') => apply_color(x.to_string(), &s.by_unit.color_m, theme, faded),
+        x if x.contains('G') => apply_color(x.to_string(), &s.by_unit.color_g, theme, faded),
+        x if x.contains('T') => apply_color(x.to_string(), &s.by_unit.color_t, theme, faded),
+        x if x.contains('P') => apply_color(x.to_string(), &s.by_unit.color_p, theme, faded),
         _ => apply_color(x, &s.by_unit.color_x, theme, faded),
     }
 }

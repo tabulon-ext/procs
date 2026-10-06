@@ -16,7 +16,7 @@ impl VmPte {
     pub fn new(header: Option<String>) -> Self {
         let header = header.unwrap_or_else(|| String::from("VmPte"));
         let unit = String::from("[bytes]");
-        VmPte {
+        Self {
             fmt_contents: HashMap::new(),
             raw_contents: HashMap::new(),
             width: 0,
@@ -33,15 +33,15 @@ impl Column for VmPte {
                 let val = val.saturating_mul(1024);
                 (val, bytify(val))
             } else {
-                (0, String::from(""))
+                (0, String::new())
             }
         } else {
-            (0, String::from(""))
+            (0, String::new())
         };
 
         self.fmt_contents.insert(proc.pid, fmt_content);
         self.raw_contents.insert(proc.pid, raw_content);
     }
 
-    column_default!(u64);
+    column_default!(u64, true);
 }
